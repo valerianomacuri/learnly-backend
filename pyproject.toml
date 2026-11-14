@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "customer-support-agent"
+name = "learnly-backend"
 version = "0.1.0"
 description = "API base with authentication and RBAC"
 readme = "README.md"
@@ -43,12 +43,12 @@ extend-exclude = ["migrations/versions"]
 
 [tool.ruff.lint]
 select = [
-    "E",    # pycodestyle errors
-    "F",    # Pyflakes
-    "I",    # Import sorting
-    "B",    # Bugbear
-    "UP",   # Pyupgrade
-    "N",    # Naming conventions
+    "E",  # pycodestyle errors
+    "F",  # Pyflakes
+    "I",  # Import sorting
+    "B",  # Bugbear
+    "UP", # Pyupgrade
+    "N",  # Naming conventions
 ]
 
 [tool.ruff.lint.flake8-bugbear]
