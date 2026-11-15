@@ -8,14 +8,14 @@ Fuente: [`../challenge.md`](../challenge.md). Se implementa **un spec por sesió
 | --- | --- | --- | --- |
 | 00 | [Fundamentos y convenciones](00-fundamentos.md) | ✅ | |
 | 01 | [Modelo de datos, semilla y lectura de compras](01-modelo-datos-semilla.md) | ✅ | |
-| 02 | [Política activa y RefundPolicyEngine](02-policy-engine.md) | ⬜ | |
-| 03 | [Crear solicitud (canal formulario)](03-crear-solicitud.md) | ⬜ | |
+| 02 | [Política activa y RefundPolicyEngine](02-policy-engine.md) | ✅ | |
+| 03 | [Crear solicitud (canal formulario)](03-crear-solicitud.md) | ✅ | |
 | 04 | [API del supervisor](04-supervisor-api.md) | ✅ | |
-| 05 | [Outbox y worker de pagos](05-payout-worker.md) | ⬜ | **Backend completo sin LLM** |
+| 05 | [Outbox y worker de pagos](05-payout-worker.md) | ✅ | **Backend completo sin LLM** |
 | 06 | [Frontend: formulario y dashboard](06-frontend-base.md) | ✅ | **Producto usable sin chat** |
 | 07 | [RAG: ingesta, recuperación, respuesta](07-rag.md) | ✅ | |
-| 08 | [Evals del RAG y ablación](08-rag-evals.md) | ⬜ | |
-| 09 | [Agente: tools y grafo de lectura](09-agente-lectura.md) | ⬜ | |
+| 08 | [Evals del RAG y ablación](08-rag-evals.md) | ✅ | |
+| 09 | [Agente: tools y grafo de lectura](09-agente-lectura.md) | 🟨 | |
 | 10 | [Agente: flujo de reembolso con HITL](10-agente-hitl.md) | ✅ | |
 | 11 | [Frontend del chat](11-frontend-chat.md) | ⬜ | **Flujo completo con chat** |
 | 12 | [Seguridad, límites y resiliencia](12-seguridad-resiliencia.md) | ⬜ | |
