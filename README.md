@@ -259,6 +259,22 @@ docker compose --profile dev up -d worker
 
 A walkthrough without the LLM is in [docs/demo-sin-llm.md](docs/demo-sin-llm.md).
 
+## RAG over the policies (spec 07)
+
+```bash
+docker compose up -d db && uv run alembic upgrade head   # pgvector + policy_chunks
+uv run rag-ingest                  # chunk + embed policies/*.md (idempotent; --force, --strategy fixed_500)
+uv run python -m app.rag.ask "¿Puedo pedir reembolso de un regalo?"
+uv run pytest tests/rag -m "not live"   # fake embeddings/LLM; `-m live` hits OpenAI
+```
+
+`OPENAI_API_KEY`, `EMBEDDING_MODEL` (`text-embedding-3-small`), `EMBEDDING_DIM` (1536),
+`LLM_MODEL`, `RELEVANCE_THRESHOLD` and `RERANK_MODEL` configure it. Without a key,
+`rag-ingest`/`rag.ask` fail with a clear message, but the refund API (including the
+citations of `/refunds/preview`) keeps working: those come from the policy
+`reason_code_map`, never from the LLM. The cross-encoder rerank is the optional extra
+`uv sync --extra rag-rerank`; without it retrieval falls back to the RRF order.
+
 ## Specs
 
 Implementation specs live in [docs/specs/](docs/specs/README.md).

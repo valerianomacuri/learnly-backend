@@ -48,6 +48,14 @@ class Settings(BaseSettings):
     # Directory with the policy .md files (default: `policies/` at the repo root)
     policies_dir: Path | None = None
 
+    # RAG (spec 07). No key => embeddings/LLM unavailable; refunds never need them.
+    openai_api_key: SecretStr | None = None
+    embedding_model: str = "text-embedding-3-small"
+    embedding_dim: int = Field(default=1536, gt=0)
+    llm_model: str = "gpt-4o-mini"
+    relevance_threshold: float = Field(default=0.25, ge=0, le=1)
+    rerank_model: str = "BAAI/bge-reranker-base"
+
     @field_validator("cors_origins", mode="before")
     @classmethod
     def _split_origins(cls, value: object) -> object:

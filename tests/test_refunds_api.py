@@ -69,7 +69,11 @@ async def test_happy_path_and_contract(
     prev = (await preview(client, ann, p.id)).json()
     assert prev["eligible"] is True
     assert prev["reason_codes"] == []
-    assert prev["citations"] == []
+    # Spec 07: an eligible preview cites the window and the refund-method sections.
+    assert [c["doc_key"] for c in prev["citations"]] == [
+        "refund-eligibility",
+        "refund-methods",
+    ]
     assert prev["purchase_id"] == str(p.id)
     assert prev["amount"] == 49.99
     assert prev["currency"] == "USD"

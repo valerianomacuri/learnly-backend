@@ -25,13 +25,20 @@ Pipeline de RAG de alta precisión sobre los 6 documentos de `policies/`: ingest
 - CLI `python -m app.rag.ask "<pregunta>"` que imprime respuesta, citas y trazas de recuperación.
 - Integración: `RefundService.preview` devuelve `citations` reales (mapa de reason codes si inelegible; para elegible, citas de "Ventana de 30 días" y método de pago por mapa/etiquetas) — **sin** depender del LLM (el preview debe funcionar con el LLM caído).
 
+## Notas de implementación (desvíos)
+- La migración es `0006` (la `0003` ya existía).
+- `section_path` almacenado omite el H1; los valores de `reason_code_map` llevan una etiqueta corta delante (`Elegibilidad > …`), que `reason_map.unqualify` elimina.
+- Chunking con parser propio de encabezados (para conservar `source_lines`) + `RecursiveCharacterTextSplitter` para prosa larga; `token_count` es una estimación offline (sin descargar tokenizador).
+- Verificación de cifras: permitidas las de `PolicyConfig` **y** las que aparecen literalmente en el contexto recuperado (el corpus menciona p. ej. "10 días hábiles", que no es parámetro).
+- `/refunds/preview` elegible ahora cita ventana de 30 días + método de reembolso (el test que esperaba `[]` se actualizó).
+
 ## Tareas
-- [ ] Tests de chunking con los 6 documentos reales: ningún chunk parte tabla/FAQ; `section_path` correcto; prefijo contextual presente.
-- [ ] Ingesta idempotente (segunda corrida no-op), activación atómica (fallo a mitad no deja dos ACTIVE), parámetros faltantes.
-- [ ] Retriever sobre Postgres real con `FakeEmbeddings`: RRF correcto, puerta de relevancia, expansión al padre.
-- [ ] `answer.py` con LLM falso: verificación de cifras ("son 60 días, no?" → corrige a 30 o se abstiene), abstención, citas válidas.
-- [ ] Mapa `reason_code → section_path`: todos los códigos del §3 resuelven a un `section_path` existente en el corpus (test que falla si un documento renombra el encabezado).
-- [ ] Prueba manual con OpenAI real (marcada `@pytest.mark.live`, excluida de CI por defecto).
+- [x] Tests de chunking con los 6 documentos reales: ningún chunk parte tabla/FAQ; `section_path` correcto; prefijo contextual presente.
+- [x] Ingesta idempotente (segunda corrida no-op), activación atómica (fallo a mitad no deja dos ACTIVE), parámetros faltantes.
+- [x] Retriever sobre Postgres real con `FakeEmbeddings`: RRF correcto, puerta de relevancia, expansión al padre.
+- [x] `answer.py` con LLM falso: verificación de cifras ("son 60 días, no?" → corrige a 30 o se abstiene), abstención, citas válidas.
+- [x] Mapa `reason_code → section_path`: todos los códigos del §3 resuelven a un `section_path` existente en el corpus (test que falla si un documento renombra el encabezado).
+- [x] Prueba manual con OpenAI real (`tests/rag/test_live.py`, `@pytest.mark.live`; excluida por defecto).
 
 ## Criterios de aceptación
 - `rag-ingest` dos veces seguidas: la segunda no escribe nada.

@@ -12,6 +12,10 @@ dependencies = [
     "alembic>=1.20.1",
     "email-validator>=2.2.0",
     "fastapi>=0.162.7",
+    "langchain-core>=1.8.0",
+    "langchain-openai>=1.8.0",
+    "langchain-text-splitters>=1.1.3",
+    "pgvector>=0.5.1",
     "psycopg[binary]>=3.3.9",
     "pwdlib[argon2]>=0.3.1",
     "pydantic-settings>=2.16.3",
@@ -25,6 +29,10 @@ dependencies = [
 seed = "app.cli.seed:main"
 policies-load = "app.policy.load:main"
 payouts-worker = "app.workers.payouts:main"
+rag-ingest = "app.rag.ingest:main"
+
+[project.optional-dependencies]
+rag-rerank = ["sentence-transformers>=3.0"]
 
 [dependency-groups]
 dev = [
@@ -68,6 +76,8 @@ pythonpath = ["src"]
 testpaths = ["tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+addopts = "-m 'not live'"
+markers = ["live: calls the real OpenAI API (excluded by default)"]
 
 [tool.mypy]
 python_version = "3.13"

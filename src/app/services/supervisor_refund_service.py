@@ -21,11 +21,11 @@ from app.domain.enums import (
     RefundStatus,
     SortOrder,
 )
-from app.domain.policy_config import ELIGIBILITY_DOC_KEY
 from app.domain.state_machine import transition
 from app.models.outbox import OutboxEvent
 from app.models.refund import RefundInternalNote, RefundPayout, RefundRequest
 from app.models.user import User
+from app.rag.reason_map import citations_for
 from app.repositories.outbox import TOPIC_REFUND_PAYOUT, OutboxRepository
 from app.repositories.payout import RefundPayoutRepository
 from app.repositories.policy import PolicyRepository
@@ -261,11 +261,7 @@ class SupervisorRefundService:
         keys = [str(c) for c in snapshot.reason_codes] + [
             str(w) for w in snapshot.warnings
         ]
-        return [
-            Citation(doc_key=ELIGIBILITY_DOC_KEY, section_path=path)
-            for key in keys
-            if (path := config.reason_code_map.get(key))
-        ]
+        return citations_for(config, keys)
 
     # -------------------------------------------------------------- decision
 

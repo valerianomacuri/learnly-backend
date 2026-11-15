@@ -4,6 +4,7 @@ from app.models.course import Course
 from app.models.eligibility import EligibilityCheck
 from app.models.outbox import OutboxEvent
 from app.models.policy import PolicyDocument
+from app.models.policy_chunk import PolicyChunk
 from app.models.purchase import CourseProgress, Purchase
 from app.models.rbac import Permission, Role, role_permissions, user_roles
 from app.models.refund import (
@@ -24,6 +25,7 @@ __all__ = [
     "EligibilityCheck",
     "OutboxEvent",
     "Permission",
+    "PolicyChunk",
     "PolicyDocument",
     "Purchase",
     "RefundEvent",

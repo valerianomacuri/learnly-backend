@@ -13,10 +13,10 @@ from app.core.permissions import Perm
 from app.core.security import Principal
 from app.domain import confirmation
 from app.domain.enums import ActorType, Channel, CheckSource, RefundStatus
-from app.domain.policy_config import ELIGIBILITY_DOC_KEY
 from app.domain.reason import validate_reason
 from app.domain.state_machine import transition
 from app.models.refund import RefundPayout, RefundRequest
+from app.rag.reason_map import citations_for, eligible_citations
 from app.repositories.payout import RefundPayoutRepository
 from app.repositories.policy import PolicyRepository
 from app.repositories.purchase import PurchaseRepository
@@ -117,6 +117,7 @@ class RefundService:
         citations: list[Citation] = []
         if result.eligible:
             assert result.amount is not None and result.refund_method is not None
+            citations = eligible_citations(config, result.refund_method)
             token, expires_at = confirmation.issue_token(
                 secret=self._secret(),
                 customer_id=principal.user_id,
@@ -131,11 +132,7 @@ class RefundService:
                 ttl_min=config.confirmation_ttl_min,
             )
         else:
-            citations = [
-                Citation(doc_key=ELIGIBILITY_DOC_KEY, section_path=path)
-                for code in result.reason_codes
-                if (path := config.reason_code_map.get(code.value))
-            ]
+            citations = citations_for(config, [c.value for c in result.reason_codes])
         return PreviewResult(
             eligible=result.eligible,
             reason_codes=result.reason_codes,

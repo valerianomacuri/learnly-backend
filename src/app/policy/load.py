@@ -40,7 +40,7 @@ def default_policies_dir() -> Path:
     return configured or Path(__file__).resolve().parents[3] / "policies"
 
 
-async def _activate(session: AsyncSession, file: PolicyDocumentFile) -> None:
+async def activate_document(session: AsyncSession, file: PolicyDocumentFile) -> None:
     meta = file.meta
     rows = (
         await session.scalars(
@@ -109,7 +109,7 @@ async def load_policies(session: AsyncSession, directory: Path) -> LoadReport:
                 current.content = file.content
             unchanged.append(file.meta.doc_key)
             continue
-        await _activate(session, file)
+        await activate_document(session, file)
         activated.append(file.meta.doc_key)
     return LoadReport(tuple(unchanged), tuple(activated))
 

@@ -44,6 +44,8 @@ from app.models.purchase import CourseProgress, Purchase  # noqa: E402
 from app.models.refund import RefundRequest  # noqa: E402
 from app.models.user import User  # noqa: E402
 from app.policy.load import load_policies  # noqa: E402
+from app.rag.embeddings import FakeEmbeddings  # noqa: E402
+from app.rag.ingest import IngestReport, ingest  # noqa: E402
 from app.services.rbac import ensure_rbac  # noqa: E402
 
 API = "/api/v1"
@@ -79,6 +81,7 @@ async def session_maker() -> AsyncIterator[async_sessionmaker[AsyncSession]]:
     engine = create_async_engine(os.environ["DATABASE_URL"])
     try:
         async with engine.begin() as conn:
+            await conn.exec_driver_sql("CREATE EXTENSION IF NOT EXISTS vector")
             await conn.run_sync(Base.metadata.drop_all)
             await conn.run_sync(Base.metadata.create_all)
         # Every DB test runs with the real active policy, like a started app.
@@ -90,6 +93,22 @@ async def session_maker() -> AsyncIterator[async_sessionmaker[AsyncSession]]:
         pytest.skip(f"Postgres unavailable: {exc}")
     yield async_sessionmaker(engine, expire_on_commit=False)
     await engine.dispose()
+
+
+@pytest.fixture
+def embedder() -> FakeEmbeddings:
+    return FakeEmbeddings()
+
+
+@pytest.fixture
+async def ingested(
+    session_maker: async_sessionmaker[AsyncSession], embedder: FakeEmbeddings
+) -> IngestReport:
+    """The real corpus chunked and embedded (fake embeddings) in the test DB."""
+    async with session_maker() as session:
+        report = await ingest(session, POLICIES_DIR, embedder)
+        await session.commit()
+    return report
 
 
 @pytest.fixture

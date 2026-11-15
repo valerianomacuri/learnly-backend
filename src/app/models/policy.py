@@ -1,7 +1,7 @@
 from datetime import date
 from typing import Any
 
-from sqlalchemy import Date, Index, String, Text, UniqueConstraint, text
+from sqlalchemy import Date, Index, Integer, String, Text, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -35,3 +35,6 @@ class PolicyDocument(IdMixin, TimestampMixin, Base):
         str_enum(PolicyStatus, "policy_status"), default=PolicyStatus.ACTIVE
     )
     params: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    # Embedding model the chunks of this version were built with (spec 07).
+    embedding_model: Mapped[str | None] = mapped_column(String(100), default=None)
+    embedding_dim: Mapped[int | None] = mapped_column(Integer, default=None)
