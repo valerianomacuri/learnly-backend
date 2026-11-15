@@ -7,7 +7,7 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy import delete, select
 
-from app.core.permissions import Perm, RoleName
+from app.core.permissions import ROLE_PERMISSIONS, Perm, RoleName
 from app.core.security import create_access_token
 from app.models.rbac import Permission, Role, role_permissions, user_roles
 from app.models.user import User
@@ -172,3 +172,18 @@ async def test_customer_can_read_and_update_only_themselves(
         f"{API}/users/{other.id}", json={"name": "Hacked"}, headers=me.headers
     )
     assert denied.status_code == 404
+
+
+async def test_ensure_rbac_is_idempotent(session_maker: Any) -> None:
+    from app.services.rbac import ensure_rbac
+
+    async with session_maker() as session:
+        await ensure_rbac(session)
+        await ensure_rbac(session)
+        await session.commit()
+        perms = (await session.scalars(select(Permission))).all()
+        roles = (await session.scalars(select(Role))).all()
+        links = (await session.execute(select(role_permissions))).all()
+    assert len(perms) == len(Perm)
+    assert len(roles) == len(RoleName)
+    assert len(links) == sum(len(p) for p in ROLE_PERMISSIONS.values())

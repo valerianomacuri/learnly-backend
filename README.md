@@ -32,6 +32,9 @@ Optional settings (defaults in `.env.example`):
 | Variable                   | Description                                       | Default |
 | -------------------------- | ------------------------------------------------- | ------- |
 | `ACCESS_TOKEN_TTL_MINUTES` | Lifetime of the JWTs issued by `POST /auth/login` | `60`    |
+| `CONFIRMATION_SECRET`      | Secret for refund confirmation tokens             | `JWT_SECRET` |
+| `CONFIRMATION_TTL_MIN`     | Confirmation token lifetime (minutes)             | `10`    |
+| `SLA_HOURS`                | Supervisor review SLA (hours)                     | `48`    |
 
 `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` and `POSTGRES_PORT` configure the
 Docker Postgres container, which uses the `pgvector/pgvector:pg17` image. The init
@@ -181,3 +184,7 @@ tests/             pytest suite
 `GET /api/v1/users` is supervisor-only (customers get 403). It accepts `email`
 (substring, case-insensitive), `role`, `limit` (1-200, default 100) and `offset`,
 ordered by creation time.
+
+## Specs
+
+Implementation specs live in [docs/specs/](docs/specs/README.md).

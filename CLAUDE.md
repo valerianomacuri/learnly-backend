@@ -39,4 +39,8 @@ Layered, with a strict one-way dependency: `api/routes` → `services` → `repo
 - **Repositories**: subclass `BaseRepository[Model]` and set `model`. It provides get/list/add/delete, and entity-specific queries go in the subclass.
 - **Models**: `models/base.py` holds the constraint naming convention (needed for Alembic autogenerate), `IdMixin` (UUID pk), `TimestampMixin`, and `str_enum`, which stores enums as VARCHAR + CHECK rather than native PG enums. Use `str_enum` for new status columns.
 - **Entities**: `User` (unique email; roles via `user_roles`), `Role`, and `Permission`.
-- **Settings**: `core/config.py` (`DATABASE_URL`, `JWT_SECRET`, `ACCESS_TOKEN_TTL_MINUTES`, ...).
+- **Domain packages**: `domain/` holds pure business logic and must not import SQLAlchemy, FastAPI or `app.services` (enforced by `tests/unit/test_architecture.py`). `agent/`, `rag/` and `workers/` are reserved and created in their own spec.
+- **Audit**: `refund_events` is the only audit trail; don't add other audit tables.
+- **Specs**: feature work is specified in `docs/specs/NN-*.md` (index in `docs/specs/README.md`); implement them in order and tick their tasks.
+- **Settings**: `core/config.py` (`DATABASE_URL`, `JWT_SECRET`, `ACCESS_TOKEN_TTL_MINUTES`, `CONFIRMATION_SECRET` (defaults to `JWT_SECRET`), `CONFIRMATION_TTL_MIN`, `SLA_HOURS`, ...). Policy thresholds are not settings; they come from the policy front-matter.
+- **Makefile**: `make check` runs lint, typecheck, tests and evals (needs `make`; on Windows without it run the `uv run` commands above).

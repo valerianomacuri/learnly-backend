@@ -27,6 +27,17 @@ class Settings(BaseSettings):
     jwt_algorithm: Literal["HS256"] = "HS256"
     access_token_ttl_minutes: int = Field(default=60, gt=0)
 
+    # Refund confirmation / SLA (policy thresholds come from the policy front-matter)
+    confirmation_secret: SecretStr | None = None
+    confirmation_ttl_min: int = Field(default=10, gt=0)
+    sla_hours: int = Field(default=48, gt=0)
+
+    @model_validator(mode="after")
+    def _derive_confirmation_secret(self) -> Self:
+        if self.confirmation_secret is None:
+            self.confirmation_secret = self.jwt_secret
+        return self
+
     @model_validator(mode="after")
     def _reject_placeholder_secret_in_production(self) -> Self:
         placeholder = self.jwt_secret.get_secret_value().startswith("change-me")

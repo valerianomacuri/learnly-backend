@@ -38,10 +38,10 @@ Los permisos del agente son un **subconjunto** de los del customer (`Principal.a
 **Docs**: actualizar `CLAUDE.md` (sección Architecture: paquetes nuevos, `refund_events` como única auditoría, convención de specs) y enlazar `docs/specs/README.md` desde el README.
 
 ## Tareas
-- [ ] Test que verifica que cada rol recibe exactamente los permisos de la tabla.
-- [ ] Extender `Perm` / `ROLE_PERMISSIONS`; `ensure_rbac` ya los persiste (comprobar idempotencia).
-- [ ] Crear `domain/__init__.py` y un test (`tests/unit/test_architecture.py`) que falla si `app.domain` importa `sqlalchemy`, `fastapi` o `app.services`.
-- [ ] `Makefile` y docs.
+- [x] Test que verifica que cada rol recibe exactamente los permisos de la tabla.
+- [x] Extender `Perm` / `ROLE_PERMISSIONS`; `ensure_rbac` ya los persiste (comprobar idempotencia).
+- [x] Crear `domain/__init__.py` y un test (`tests/unit/test_architecture.py`) que falla si `app.domain` importa `sqlalchemy`, `fastapi` o `app.services`.
+- [x] `Makefile` y docs.
 
 ## Criterios de aceptación
 - `ensure_rbac` dos veces no duplica filas.
