@@ -8,7 +8,12 @@ from fastapi.responses import JSONResponse
 from app.api.routes import api_router
 from app.core.config import get_settings
 from app.core.database import get_engine
-from app.services.errors import ConflictError, ForbiddenError, NotFoundError
+from app.services.errors import (
+    ConflictError,
+    ForbiddenError,
+    InvalidInputError,
+    NotFoundError,
+)
 
 
 @asynccontextmanager
@@ -35,7 +40,12 @@ def create_app() -> FastAPI:
     async def forbidden_handler(_: Request, exc: ForbiddenError) -> JSONResponse:
         return JSONResponse(status_code=403, content={"detail": str(exc)})
 
+    @app.exception_handler(InvalidInputError)
+    async def invalid_input_handler(_: Request, exc: InvalidInputError) -> JSONResponse:
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
+
     @app.get("/health", tags=["health"])
+    @app.get("/healthz", tags=["health"])
     async def health() -> dict[str, str]:
         return {"status": "ok"}
 

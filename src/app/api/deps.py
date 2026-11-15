@@ -10,6 +10,8 @@ from app.core.permissions import Perm
 from app.core.security import InvalidTokenError, Principal, decode_access_token
 from app.repositories.user import UserRepository
 from app.services.auth_service import AuthService
+from app.services.me_service import MeService
+from app.services.purchase_service import PurchaseService
 from app.services.user_service import UserService
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
@@ -68,5 +70,15 @@ def get_user_service(session: SessionDep) -> UserService:
     return UserService(session)
 
 
+def get_me_service(session: SessionDep) -> MeService:
+    return MeService(session)
+
+
+def get_purchase_service(session: SessionDep) -> PurchaseService:
+    return PurchaseService(session)
+
+
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
 UserServiceDep = Annotated[UserService, Depends(get_user_service)]
+MeServiceDep = Annotated[MeService, Depends(get_me_service)]
+PurchaseServiceDep = Annotated[PurchaseService, Depends(get_purchase_service)]

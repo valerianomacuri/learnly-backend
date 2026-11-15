@@ -53,7 +53,7 @@ curl -X POST http://localhost:8000/api/v1/auth/login \
 # {"access_token": "<jwt>", "token_type": "bearer", "expires_in": 3600}
 ```
 
-Every other route except `/health` requires `Authorization: Bearer <jwt>` signed with
+Every other route except `/health` and `/healthz` requires `Authorization: Bearer <jwt>` signed with
 `JWT_SECRET` (HS256), carrying only `sub` (the `User.id`), `iat` and `exp`; the lifetime
 is `ACCESS_TOKEN_TTL_MINUTES`. Roles and permissions are looked up in the database on
 every request (a token for an unknown user is `401`). A wrong password and an unknown
@@ -91,24 +91,40 @@ uv run uvicorn app.main:app --reload --app-dir src
 
 - API: http://localhost:8000 (routes under `/api/v1`)
 - Docs: http://localhost:8000/docs
-- Health: http://localhost:8000/health
+- Health: http://localhost:8000/health (alias: `/healthz`)
 
 ## Seed data (development)
 
 ```bash
-uv run seed                      # create the roles catalog and users, print bearer tokens (idempotent)
-uv run seed --reset              # delete the seed users, then seed again
+uv run seed                      # create the roles catalog, users, courses and the 13 refund cases, print bearer tokens (idempotent)
+uv run seed --reset              # delete the seed data, then seed again
 uv run seed --no-tokens          # do not print tokens (shared terminals)
 uv run seed --token-ttl-hours 24 # token lifetime (default 168)
 ```
 
 Every seed user has the development password `seed-password-1` (sign in with
 `/auth/login`). Users: `supervisor-1` / `supervisor-2` (`sup1@support.example`,
-`sup2@support.example`) and customers `ann@example.com`, `bob@example.com`. Needs the
-migrations applied and `JWT_SECRET` set. It refuses to run with `ENVIRONMENT=production`.
+`sup2@support.example`) and customers `ann@example.com` (owner of most cases) and
+`bob@example.com`, plus three customers that carry refund history for their own case
+(`double-request`, `high-frequency`, `abuse-limit`). Needs the migrations applied and
+`JWT_SECRET` set. It refuses to run with `ENVIRONMENT=production`.
 Ids are deterministic, so re-running changes nothing and the printed tokens stay valid.
-`--reset` only deletes the seed users. The command prints one token per user as
-`export NAME=<token>` lines and ready-to-copy `curl` examples (bash syntax).
+`--reset` only deletes the seed users' data and the seed courses. The command prints one
+token per user as `export NAME=<token>` lines and ready-to-copy `curl` examples (bash
+syntax).
+
+It also creates the 13 edge cases of the challenge (§9) as purchases and prints a table
+`case -> purchase_id -> expected result`. Purchase dates are relative to `now()` and are
+re-computed on every run, so re-run the seed if they drift (the "exact edge" case is day
+30 minus 10 minutes, so it stays demonstrable for a few minutes only).
+
+## Purchases (customer)
+
+`GET /api/v1/me` (profile, roles, credit balance = SUM of the credit ledger),
+`GET /api/v1/purchases` (own purchases, newest first; filters `status`,
+`within_window`; cursor pagination with `cursor` and `limit`, 1-100) and
+`GET /api/v1/purchases/{id}` (with progress and `refund_deadline`). Another customer's
+purchase answers the same `404` as a missing one; a supervisor gets `403`.
 
 ## Production build
 
@@ -163,13 +179,14 @@ uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run pyt
 
 ```
 src/app/
-  main.py          FastAPI app factory, error handlers, /health
+  main.py          FastAPI app factory, error handlers, /health and /healthz
   api/             deps.py (dependency wiring, auth) + routes/ (HTTP layer)
   schemas/         Pydantic DTOs validating requests and shaping responses
-  services/        auth, user management, RBAC catalog sync
+  services/        auth, users, purchases, /me, refund events, RBAC catalog sync
   repositories/    database access, one per entity; scope.py = ownership scoping
-  models/          SQLAlchemy ORM models
-  core/            config.py (validated env), database.py, security.py (JWT)
+  models/          SQLAlchemy ORM models, one file per aggregate
+  domain/          pure business code (enums today; engine and state machine later)
+  core/            config.py (validated env), database.py, security.py (JWT), pagination.py
   cli/             seed.py (`uv run seed`, development data)
 migrations/        Alembic migrations
 tests/             pytest suite
@@ -177,7 +194,13 @@ tests/             pytest suite
 
 ## Entities
 
-`User (email unique; roles M2M)`, `Role`, and `Permission`.
+`User (email unique; roles M2M)`, `Role`, and `Permission`, plus the refund domain:
+`Course`, `Purchase`, `CourseProgress`, `RefundRequest`, `RefundEvent` (append-only),
+`RefundInternalNote`, `RefundPayout`, `CreditLedgerEntry`, `EligibilityCheck`,
+`OutboxEvent`, `ChatThread` and `PolicyDocument`. `refund_events` rejects UPDATE and
+DELETE with a database trigger, and `refund_requests` has a partial unique index that
+allows only one active request (`PENDING_APPROVAL`, `APPROVED`, `PROCESSING`) per
+purchase.
 
 ### Listings
 

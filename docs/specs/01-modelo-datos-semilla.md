@@ -37,13 +37,24 @@ Un archivo por agregado: `course.py`, `purchase.py` (`Purchase`, `CourseProgress
 ### Semilla (`cli/seed.py`, idempotente, `--reset`)
 Añadir cursos y usuarios nuevos (≥2 customers, 2 supervisors) y los 13 casos del challenge §9 como compras de `cust1`, con `purchased_at` **relativo a `now()`** (ej. "día 30 menos 1 s" se recalcula en cada seed). Los casos que requieren historial (doble solicitud, frecuencia alta = 3 reembolsos, abuso = 5) usan un customer propio cada uno para no contaminarse. Imprimir una tabla `caso → purchase_id → resultado esperado` (la reutiliza el spec 02 como fixture de tests).
 
+## Decisiones tomadas al implementar
+- **`cust1` = `ann`**: se conservan los customers `ann` y `bob` del seed existente (no se renombran para no dejar filas huérfanas). `ann` es dueña de los casos; `bob` es el "otro customer" (compra ajena). Los tres customers con historial son `double-request`, `high-frequency` y `abuse-limit`. En la verificación el token es `$ANN`.
+- **Borde exacto = día 30 menos 10 min** (no 1 s): con 1 s la compra caducaría antes de poder lanzar un curl. El segundo exacto lo cubre el engine con reloj inyectado (spec 02). Constante `EDGE_MARGIN` en el seed.
+- **`refund_events.created_at` usa `clock_timestamp()`** (no `now()`): varios eventos de una misma transacción deben conservar su orden en el timeline.
+- **`seed --reset` desactiva el trigger solo dentro de su transacción** para borrar los eventos de la semilla (el DDL es transaccional: si algo falla vuelve a quedar activo). Es lo único que borra `refund_events`.
+- **`eligibility_checks.purchase_id` sin FK**: para poder registrar `PURCHASE_NOT_FOUND` (compra inexistente o ajena).
+- **Contrato de dinero**: JSON numérico (`49.99`) como en el challenge; en Python se mantiene `Decimal`.
+- `MeRead` devuelve `roles` (lista), no un único `role`: un usuario puede tener varios.
+- Error nuevo `InvalidInputError` → 422 (cursor inválido).
+- La migración copia el SQL del trigger en vez de importarlo de los modelos.
+
 ## Tareas
-- [ ] Enums de dominio + modelos + `models/__init__.py`.
-- [ ] Migración `0002` (autogenerate, revisar a mano; trigger y índice parcial a mano). `alembic upgrade head` desde BD vacía y `alembic check`.
-- [ ] Test de BD: trigger rechaza UPDATE y DELETE en `refund_events`; índice parcial rechaza dos solicitudes activas para la misma compra pero permite una nueva tras `CANCELLED`.
-- [ ] Repos/servicios/rutas de compras; tests de cursor, filtros y **BOLA** (customer A pide compra de B → 404, idéntico al inexistente).
-- [ ] Fixtures de dominio en `tests/conftest.py` (`make_course`, `make_purchase(days_ago=, progress=, ...)`).
-- [ ] Semilla y `tests/test_seed.py` ampliado.
+- [x] Enums de dominio + modelos + `models/__init__.py`.
+- [x] Migración `0002` (autogenerate, revisar a mano; trigger y índice parcial a mano). `alembic upgrade head` desde BD vacía y `alembic check`.
+- [x] Test de BD: trigger rechaza UPDATE y DELETE en `refund_events`; índice parcial rechaza dos solicitudes activas para la misma compra pero permite una nueva tras `CANCELLED`.
+- [x] Repos/servicios/rutas de compras; tests de cursor, filtros y **BOLA** (customer A pide compra de B → 404, idéntico al inexistente).
+- [x] Fixtures de dominio en `tests/conftest.py` (`make_course`, `make_purchase(days_ago=, progress=, ...)`).
+- [x] Semilla y `tests/test_seed.py` ampliado.
 
 ## Criterios de aceptación
 - Intentar modificar un `refund_events` falla **a nivel de base de datos**.
@@ -57,6 +68,6 @@ docker compose up -d db && uv run alembic upgrade head && uv run alembic check
 uv run seed
 uv run pytest -q && make lint typecheck
 # humo (token impreso por el seed)
-curl -H "Authorization: Bearer $CUST1" localhost:8000/api/v1/purchases
-curl -H "Authorization: Bearer $CUST1" localhost:8000/api/v1/purchases/<id-de-otro-customer>   # 404
+curl -H "Authorization: Bearer $ANN" localhost:8000/api/v1/purchases
+curl -H "Authorization: Bearer $ANN" localhost:8000/api/v1/purchases/<id-de-otro-customer>   # 404 (caso 13 de la tabla del seed)
 ```

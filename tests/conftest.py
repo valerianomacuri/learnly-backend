@@ -3,6 +3,8 @@ import os
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -24,8 +26,20 @@ from app.core.database import get_session  # noqa: E402
 from app.core.passwords import hash_password  # noqa: E402
 from app.core.permissions import RoleName  # noqa: E402
 from app.core.security import create_access_token  # noqa: E402
+from app.domain.enums import (  # noqa: E402
+    Channel,
+    PaymentMethod,
+    PurchaseStatus,
+    PurchaseType,
+    ReasonCategory,
+    RefundMethod,
+    RefundStatus,
+)
 from app.main import app  # noqa: E402
 from app.models.base import Base  # noqa: E402
+from app.models.course import Course  # noqa: E402
+from app.models.purchase import CourseProgress, Purchase  # noqa: E402
+from app.models.refund import RefundRequest  # noqa: E402
 from app.models.user import User  # noqa: E402
 from app.services.rbac import ensure_rbac  # noqa: E402
 
@@ -119,3 +133,135 @@ async def client(
     ) as http:
         yield http
     app.dependency_overrides.clear()
+
+
+@dataclass
+class PurchaseRef:
+    """A purchase stored by `make_purchase`."""
+
+    id: uuid.UUID
+    customer_id: uuid.UUID
+    course_id: uuid.UUID
+    purchased_at: datetime
+    amount: Decimal
+
+
+MakeCourse = Callable[..., Awaitable[uuid.UUID]]
+MakePurchase = Callable[..., Awaitable[PurchaseRef]]
+MakeRefund = Callable[..., Awaitable[uuid.UUID]]
+
+
+@pytest.fixture
+def make_course(session_maker: async_sessionmaker[AsyncSession]) -> MakeCourse:
+    """Insert a course and return its id."""
+
+    async def _make(
+        title: str = "Python for APIs",
+        *,
+        instructor_name: str = "Grace Hopper",
+        price: Decimal | str = "49.99",
+        currency: str = "USD",
+    ) -> uuid.UUID:
+        async with session_maker() as session:
+            course = Course(
+                title=title,
+                instructor_name=instructor_name,
+                price=Decimal(price),
+                currency=currency,
+            )
+            session.add(course)
+            await session.commit()
+            return course.id
+
+    return _make
+
+
+@pytest.fixture
+def make_purchase(
+    session_maker: async_sessionmaker[AsyncSession], make_course: MakeCourse
+) -> MakePurchase:
+    """Insert a purchase (with its progress) of `customer`, `days_ago` days old.
+
+    `customer` is an `Actor` or a user id. `purchased_at` overrides `days_ago`.
+    Set `certificate=True` to issue the certificate; `progress=None` skips the
+    progress row.
+    """
+
+    async def _make(
+        customer: Actor | uuid.UUID,
+        *,
+        days_ago: float = 5,
+        progress: int | None = 0,
+        certificate: bool = False,
+        amount: Decimal | str = "49.99",
+        currency: str = "USD",
+        payment_method: PaymentMethod = PaymentMethod.CARD,
+        purchase_type: PurchaseType = PurchaseType.INDIVIDUAL,
+        status: PurchaseStatus = PurchaseStatus.ACTIVE,
+        course_id: uuid.UUID | None = None,
+        purchased_at: datetime | None = None,
+    ) -> PurchaseRef:
+        customer_id = customer.id if isinstance(customer, Actor) else customer
+        when = purchased_at or datetime.now(UTC) - timedelta(days=days_ago)
+        course = course_id or await make_course(price=amount, currency=currency)
+        async with session_maker() as session:
+            purchase = Purchase(
+                customer_id=customer_id,
+                course_id=course,
+                amount=Decimal(amount),
+                currency=currency,
+                payment_method=payment_method,
+                purchase_type=purchase_type,
+                purchased_at=when,
+                status=status,
+            )
+            session.add(purchase)
+            await session.flush()
+            if progress is not None:
+                session.add(
+                    CourseProgress(
+                        purchase_id=purchase.id,
+                        progress_pct=progress,
+                        lectures_completed=progress // 2,
+                        last_accessed_at=when if progress else None,
+                        certificate_issued_at=when if certificate else None,
+                    )
+                )
+            await session.commit()
+            return PurchaseRef(purchase.id, customer_id, course, when, Decimal(amount))
+
+    return _make
+
+
+@pytest.fixture
+def make_refund(session_maker: async_sessionmaker[AsyncSession]) -> MakeRefund:
+    """Insert a refund request for `purchase` (a `PurchaseRef`); returns its id."""
+
+    async def _make(
+        purchase: PurchaseRef,
+        *,
+        status: RefundStatus = RefundStatus.PENDING_APPROVAL,
+        reason_text: str = "The course content does not match its description.",
+        method: RefundMethod = RefundMethod.ORIGINAL_PAYMENT,
+        idempotency_key: str | None = None,
+    ) -> uuid.UUID:
+        async with session_maker() as session:
+            refund = RefundRequest(
+                customer_id=purchase.customer_id,
+                purchase_id=purchase.id,
+                status=status,
+                reason_category=ReasonCategory.NOT_AS_DESCRIBED,
+                reason_text=reason_text,
+                refund_method=method,
+                amount=purchase.amount,
+                currency="USD",
+                channel=Channel.MANUAL_FORM,
+                eligibility_snapshot={},
+                policy_version="test",
+                idempotency_key=idempotency_key or uuid.uuid4().hex,
+            )
+            session.add(refund)
+            await session.commit()
+            return refund.id
+
+    return _make

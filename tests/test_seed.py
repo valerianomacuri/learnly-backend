@@ -1,25 +1,39 @@
 import asyncio
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.cli import seed as seed_module
-from app.cli.seed import USERS, UserSpec, render, reset, seed, sid, user_id
+from app.cli.seed import (
+    USERS,
+    UserSpec,
+    render,
+    reset,
+    seed,
+    sid,
+    user_id,
+)
 from app.core.config import Settings
 from app.core.permissions import RoleName
 from app.core.security import decode_access_token
+from app.models.course import Course
+from app.models.purchase import CourseProgress, Purchase
+from app.models.refund import RefundEvent, RefundRequest
 from app.models.user import User
 
 TTL = timedelta(hours=1)
 Maker = async_sessionmaker[AsyncSession]
+TABLES = (User, Course, Purchase, CourseProgress, RefundRequest, RefundEvent)
+NOW = datetime(2026, 11, 15, 12, 0, tzinfo=UTC)
 
 
-async def run_seed(maker: Maker) -> Any:
+async def run_seed(maker: Maker, now: datetime | None = None) -> Any:
     async with maker() as session:
-        report = await seed(session, ttl=TTL)
+        report = await seed(session, ttl=TTL, now=now)
         await session.commit()
     return report
 
@@ -30,7 +44,7 @@ async def counts(maker: Maker) -> dict[str, int]:
             model.__tablename__: int(
                 await session.scalar(select(func.count()).select_from(model)) or 0
             )
-            for model in (User,)
+            for model in TABLES
         }
 
 
@@ -63,10 +77,28 @@ async def test_reset_removes_only_seed_users_and_seed_recreates(
     after_reset = await counts(session_maker)
     assert after_reset == {
         "users": 1,  # Eve is not a seed user, so she survives
+        "courses": 0,
+        "purchases": 0,
+        "course_progress": 0,
+        "refund_requests": 0,
+        "refund_events": 0,
     }
 
     await run_seed(session_maker)
     assert (await counts(session_maker))["users"] == len(USERS) + 1
+
+
+async def test_reset_keeps_refund_events_protected(session_maker: Maker) -> None:
+    """`reset` lifts the append-only trigger only inside its own transaction."""
+    await run_seed(session_maker)
+    async with session_maker() as session:
+        await reset(session)
+        await session.commit()
+    await run_seed(session_maker)
+
+    async with session_maker() as session:
+        with pytest.raises(IntegrityError, match="append-only"):
+            await session.execute(update(RefundEvent).values(type="TAMPERED"))
 
 
 async def test_tokens_identify_existing_users_with_their_role(

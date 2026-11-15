@@ -6,8 +6,8 @@ Fuente: [`../challenge.md`](../challenge.md). Se implementa **un spec por sesió
 
 | # | Spec | Estado | Hito |
 | --- | --- | --- | --- |
-| 00 | [Fundamentos y convenciones](00-fundamentos.md) | ⬜ | |
-| 01 | [Modelo de datos, semilla y lectura de compras](01-modelo-datos-semilla.md) | ⬜ | |
+| 00 | [Fundamentos y convenciones](00-fundamentos.md) | ✅ | |
+| 01 | [Modelo de datos, semilla y lectura de compras](01-modelo-datos-semilla.md) | ✅ | |
 | 02 | [Política activa y RefundPolicyEngine](02-policy-engine.md) | ⬜ | |
 | 03 | [Crear solicitud (canal formulario)](03-crear-solicitud.md) | ⬜ | |
 | 04 | [API del supervisor](04-supervisor-api.md) | ⬜ | |
