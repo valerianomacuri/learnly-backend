@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal, Self
 
 from pydantic import Field, SecretStr, field_validator, model_validator
@@ -31,6 +32,9 @@ class Settings(BaseSettings):
     confirmation_secret: SecretStr | None = None
     confirmation_ttl_min: int = Field(default=10, gt=0)
     sla_hours: int = Field(default=48, gt=0)
+
+    # Directory with the policy .md files (default: `policies/` at the repo root)
+    policies_dir: Path | None = None
 
     @model_validator(mode="after")
     def _derive_confirmation_secret(self) -> Self:

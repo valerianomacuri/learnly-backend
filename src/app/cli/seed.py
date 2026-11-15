@@ -50,6 +50,7 @@ from app.models.refund import (
     RefundRequest,
 )
 from app.models.user import User
+from app.policy.load import default_policies_dir, load_policies
 from app.services.rbac import ensure_rbac
 from app.services.refund_event_service import EventActor, RefundEventService
 
@@ -112,7 +113,8 @@ MAIN_CUSTOMER = "ann"
 OTHER_CUSTOMER = "bob"
 DECIDING_SUPERVISOR = "supervisor-1"
 
-# TODO(spec-02): both come from the active policy (`PolicyConfig`), not from here.
+# Mirror the policy front-matter (`refund-eligibility`); only used to date the
+# seed cases and to stamp the seeded refund requests.
 POLICY_VERSION = "2026-10-01"
 REFUND_WINDOW = timedelta(days=30)
 # The "exact edge" case is 30 days minus this margin. The challenge says one
@@ -720,6 +722,8 @@ async def _run(settings: Settings, args: argparse.Namespace) -> SeedReport:
     try:
         async with async_sessionmaker(engine, expire_on_commit=False)() as session:
             try:
+                # The engine needs the active policy: load it first (idempotent).
+                await load_policies(session, default_policies_dir())
                 if args.reset:
                     await reset(session)
                 report = await seed(session, ttl=timedelta(hours=args.token_ttl_hours))

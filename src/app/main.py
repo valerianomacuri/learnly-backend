@@ -4,10 +4,12 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.routes import api_router
 from app.core.config import get_settings
 from app.core.database import get_engine
+from app.repositories.policy import PolicyRepository
 from app.services.errors import (
     ConflictError,
     ForbiddenError,
@@ -18,6 +20,9 @@ from app.services.errors import (
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    # Fail fast: the app needs a complete ACTIVE policy (`uv run policies-load`).
+    async with AsyncSession(get_engine()) as session:
+        await PolicyRepository(session).get_active_config()
     yield
     await get_engine().dispose()
 

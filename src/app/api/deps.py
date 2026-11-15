@@ -10,6 +10,7 @@ from app.core.permissions import Perm
 from app.core.security import InvalidTokenError, Principal, decode_access_token
 from app.repositories.user import UserRepository
 from app.services.auth_service import AuthService
+from app.services.eligibility_service import EligibilityService
 from app.services.me_service import MeService
 from app.services.purchase_service import PurchaseService
 from app.services.user_service import UserService
@@ -78,6 +79,11 @@ def get_purchase_service(session: SessionDep) -> PurchaseService:
     return PurchaseService(session)
 
 
+def get_eligibility_service(session: SessionDep) -> EligibilityService:
+    return EligibilityService(session)
+
+
+EligibilityServiceDep = Annotated[EligibilityService, Depends(get_eligibility_service)]
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
 UserServiceDep = Annotated[UserService, Depends(get_user_service)]
 MeServiceDep = Annotated[MeService, Depends(get_me_service)]

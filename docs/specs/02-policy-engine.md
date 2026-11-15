@@ -34,11 +34,21 @@ class RefundPolicyEngine:
 - Sustituir el `TODO(spec-02)` de `refund_deadline` por `PolicyConfig`.
 
 ## Tareas
-- [ ] `PolicyConfig`, loader, tablas `policy_documents` (ya del 01) y CLI; test "falta un param → no arranca".
-- [ ] **Tests del engine primero**: tabla parametrizada de los 13 casos + Hypothesis en bordes (30 d −1 s elegible, exacto elegible, +1 s no; progreso 30/31; 4/5 reembolsos; 2/3 flag).
-- [ ] Implementar engine hasta verde.
-- [ ] `EligibilityService`, ruta, schemas (customer sin warnings), test de persistencia de `eligibility_checks`.
-- [ ] Cobertura ≥ 85 % en `domain/` (`--cov=app.domain`, añadir `pytest-cov` y `hypothesis` a dev).
+- [x] `PolicyConfig`, loader, tablas `policy_documents` (ya del 01) y CLI; test "falta un param → no arranca".
+- [x] **Tests del engine primero**: tabla parametrizada de los 13 casos + Hypothesis en bordes (30 d −1 s elegible, exacto elegible, +1 s no; progreso 30/31; 4/5 reembolsos; 2/3 flag).
+- [x] Implementar engine hasta verde.
+- [x] `EligibilityService`, ruta, schemas (customer sin warnings), test de persistencia de `eligibility_checks`.
+- [x] Cobertura ≥ 85 % en `domain/` (`--cov=app.domain`, añadir `pytest-cov` y `hypothesis` a dev).
+
+## Decisiones tomadas al implementar
+- **`PolicyConfig` se compone de varios documentos**: `confirmation_ttl_min` y `sla_hours` viven en el front-matter de `refund-process`, el resto en `refund-eligibility`; `PolicyConfig.from_documents` los fusiona (mismo parámetro con valores distintos -> `PolicyConfigError`) y `policy_version` es la versión de `refund-eligibility`.
+- **`reason_code_map` se guarda dentro de `policy_documents.params`** (clave reservada `reason_code_map`) para no añadir columna ni migración.
+- **Caché por huella**: `get_active_config()` consulta los (pocos) documentos ACTIVE y reutiliza el `PolicyConfig` parseado mientras no cambie `(doc_key, version, checksum)`; una nueva activación invalida sola, también entre procesos.
+- **Misma `version` con contenido distinto** (editar `refund_window_days` sin subir versión): `(doc_key, version)` es único, así que la fila se actualiza en sitio con un warning. Subir `version` conserva el historial (anterior -> `SUPERSEDED`).
+- **Validación previa**: el loader valida el conjunto completo antes de tocar la BD; un parámetro que falta o está mal tipado no activa nada.
+- `refund_method` es `None` cuando no es elegible (como en la semilla); `amount` se informa siempre que la compra existe. `HIGH_REFUND_FREQUENCY` solo con 3-4 reembolsos (con 5 ya bloquea).
+- Reembolsos de los últimos 12 m: `COMPLETED` con `coalesce(decided_at, created_at)` >= now - 365 d.
+- `seed` (en su `main`) y la fixture `session_maker` de los tests cargan la política activa; el arranque (`lifespan`) falla si no hay una completa. Directorio configurable con `POLICIES_DIR`.
 
 ## Criterios de aceptación
 - Los 13 casos semilla producen exactamente el resultado de la tabla del challenge §9.

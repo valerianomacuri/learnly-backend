@@ -3,10 +3,11 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
 
-from app.api.deps import PurchaseServiceDep, requires
+from app.api.deps import EligibilityServiceDep, PurchaseServiceDep, requires
 from app.core.permissions import Perm
 from app.core.security import Principal
-from app.domain.enums import PurchaseStatus
+from app.domain.enums import CheckSource, PurchaseStatus
+from app.schemas.eligibility import EligibilityRead
 from app.schemas.purchase import PurchaseDetail, PurchasePage
 
 router = APIRouter(prefix="/purchases", tags=["purchases"])
@@ -34,6 +35,21 @@ async def list_purchases(
         cursor=cursor,
         limit=limit,
     )
+
+
+SimulatorDep = Annotated[Principal, Depends(requires(Perm.REFUND_SIMULATE))]
+
+
+@router.get("/{purchase_id}/refund-eligibility", response_model=EligibilityRead)
+async def refund_eligibility(
+    purchase_id: uuid.UUID, service: EligibilityServiceDep, principal: SimulatorDep
+) -> EligibilityRead:
+    """Run the refund engine on a purchase (recorded as a SIMULATION check).
+
+    A purchase that is missing or not yours gives `PURCHASE_NOT_FOUND` (200).
+    """
+    result = await service.check(principal, purchase_id, CheckSource.SIMULATION)
+    return EligibilityRead.from_result(result)
 
 
 @router.get("/{purchase_id}", response_model=PurchaseDetail)

@@ -93,3 +93,33 @@ class ThreadStatus(enum.StrEnum):
 class PolicyStatus(enum.StrEnum):
     ACTIVE = "ACTIVE"
     SUPERSEDED = "SUPERSEDED"
+
+
+class ReasonCode(enum.StrEnum):
+    """Why a refund is not eligible (challenge §3)."""
+
+    OUTSIDE_REFUND_WINDOW = "OUTSIDE_REFUND_WINDOW"
+    ALREADY_REFUNDED = "ALREADY_REFUNDED"
+    ACTIVE_REFUND_EXISTS = "ACTIVE_REFUND_EXISTS"
+    PREVIOUSLY_REJECTED = "PREVIOUSLY_REJECTED"
+    CONSUMPTION_LIMIT_EXCEEDED = "CONSUMPTION_LIMIT_EXCEEDED"
+    CERTIFICATE_ISSUED = "CERTIFICATE_ISSUED"
+    SUBSCRIPTION_NOT_ELIGIBLE = "SUBSCRIPTION_NOT_ELIGIBLE"
+    THIRD_PARTY_PURCHASE = "THIRD_PARTY_PURCHASE"
+    REFUND_ABUSE_LIMIT = "REFUND_ABUSE_LIMIT"
+    PURCHASE_NOT_FOUND = "PURCHASE_NOT_FOUND"
+
+
+class EligibilityWarning(enum.StrEnum):
+    """Non-blocking flags, for the supervisor only (never shown to the customer)."""
+
+    HIGH_REFUND_FREQUENCY = "HIGH_REFUND_FREQUENCY"
+
+
+class CheckSource(enum.StrEnum):
+    """Where an eligibility check came from (`eligibility_checks.source`)."""
+
+    SIMULATION = "SIMULATION"
+    PREVIEW = "PREVIEW"
+    CREATE_ATTEMPT = "CREATE_ATTEMPT"
+    AGENT = "AGENT"

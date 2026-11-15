@@ -9,6 +9,7 @@ from app.core.permissions import Perm
 from app.core.security import Principal
 from app.domain.enums import PurchaseStatus
 from app.models.purchase import Purchase
+from app.repositories.policy import PolicyRepository
 from app.repositories.purchase import PurchaseRepository
 from app.schemas.purchase import (
     CourseSummary,
@@ -19,9 +20,6 @@ from app.schemas.purchase import (
 )
 from app.services.authz import require_permission
 from app.services.errors import InvalidInputError, NotFoundError
-
-# TODO(spec-02): replaced by `PolicyConfig.refund_window_days` (policy front-matter).
-REFUND_WINDOW_DAYS = 30
 
 
 def utc_now() -> datetime:
@@ -35,6 +33,7 @@ class PurchaseService:
         self, session: AsyncSession, clock: Callable[[], datetime] = utc_now
     ) -> None:
         self.repo = PurchaseRepository(session)
+        self.policies = PolicyRepository(session)
         self.clock = clock
 
     async def list(
@@ -48,6 +47,7 @@ class PurchaseService:
     ) -> PurchasePage:
         require_permission(principal, Perm.PURCHASE_READ_OWN)
         now = self.clock()
+        window = await self._window()
         after = None
         if cursor is not None:
             try:
@@ -55,7 +55,7 @@ class PurchaseService:
             except ValueError as exc:
                 raise InvalidInputError("Invalid cursor") from exc
 
-        window_start = now - timedelta(days=REFUND_WINDOW_DAYS)
+        window_start = now - window
         rows = await self.repo.list_owned(
             principal.user_id,
             status=status,
@@ -71,7 +71,7 @@ class PurchaseService:
             else None
         )
         return PurchasePage(
-            items=[self._read(p, now) for p in page], next_cursor=next_cursor
+            items=[self._read(p, now, window) for p in page], next_cursor=next_cursor
         )
 
     async def get(self, principal: Principal, purchase_id: uuid.UUID) -> PurchaseDetail:
@@ -80,17 +80,20 @@ class PurchaseService:
         if purchase is None:
             raise NotFoundError("Purchase")
         progress = purchase.progress
+        window = await self._window()
         return PurchaseDetail(
-            **self._read(purchase, self.clock()).model_dump(),
+            **self._read(purchase, self.clock(), window).model_dump(),
             progress=ProgressRead.model_validate(progress) if progress else None,
         )
 
-    @staticmethod
-    def refund_deadline(purchase: Purchase) -> datetime:
-        return purchase.purchased_at + timedelta(days=REFUND_WINDOW_DAYS)
+    async def _window(self) -> timedelta:
+        """The refund window of the active policy (BR-02)."""
+        config = await self.policies.get_active_config()
+        return timedelta(days=config.refund_window_days)
 
-    def _read(self, purchase: Purchase, now: datetime) -> PurchaseRead:
-        deadline = self.refund_deadline(purchase)
+    @staticmethod
+    def _read(purchase: Purchase, now: datetime, window: timedelta) -> PurchaseRead:
+        deadline = purchase.purchased_at + window
         return PurchaseRead(
             id=purchase.id,
             course=CourseSummary.model_validate(purchase.course),

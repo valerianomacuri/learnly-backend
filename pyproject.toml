@@ -16,20 +16,25 @@ dependencies = [
     "pwdlib[argon2]>=0.3.1",
     "pydantic-settings>=2.16.3",
     "pyjwt>=2.15.1",
+    "pyyaml>=6.0.3",
     "sqlalchemy[asyncio]>=2.1.8",
     "uvicorn[standard]>=0.54.0",
 ]
 
 [project.scripts]
 seed = "app.cli.seed:main"
+policies-load = "app.policy.load:main"
 
 [dependency-groups]
 dev = [
     "httpx>=0.28.1",
+    "hypothesis>=6.170.15",
     "mypy>=2.4.1",
     "pytest>=9.2.0",
     "pytest-asyncio>=1.5.0",
+    "pytest-cov>=7.1.0",
     "ruff>=0.17.5",
+    "types-pyyaml>=6.0.12.20261113",
 ]
 
 [tool.hatch.build.targets.wheel]

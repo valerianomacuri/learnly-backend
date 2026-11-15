@@ -5,6 +5,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -41,9 +42,11 @@ from app.models.course import Course  # noqa: E402
 from app.models.purchase import CourseProgress, Purchase  # noqa: E402
 from app.models.refund import RefundRequest  # noqa: E402
 from app.models.user import User  # noqa: E402
+from app.policy.load import load_policies  # noqa: E402
 from app.services.rbac import ensure_rbac  # noqa: E402
 
 API = "/api/v1"
+POLICIES_DIR = Path(__file__).resolve().parents[1] / "policies"
 PASSWORD = "password-123"
 # Argon2 is deliberately slow: hash once per test session, not once per user.
 PASSWORD_HASH = hash_password(PASSWORD)
@@ -77,6 +80,10 @@ async def session_maker() -> AsyncIterator[async_sessionmaker[AsyncSession]]:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.drop_all)
             await conn.run_sync(Base.metadata.create_all)
+        # Every DB test runs with the real active policy, like a started app.
+        async with async_sessionmaker(engine, expire_on_commit=False)() as session:
+            await load_policies(session, POLICIES_DIR)
+            await session.commit()
     except OperationalError as exc:  # pragma: no cover
         await engine.dispose()
         pytest.skip(f"Postgres unavailable: {exc}")
