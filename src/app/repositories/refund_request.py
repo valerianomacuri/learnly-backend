@@ -1,7 +1,8 @@
 import uuid
+from collections.abc import Sequence
 from datetime import datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, tuple_
 
 from app.domain.enums import RefundStatus
 from app.models.refund import RefundRequest
@@ -39,3 +40,47 @@ class RefundRequestRepository(BaseRepository[RefundRequest]):
             )
         )
         return int(count or 0)
+
+    async def get_owned(
+        self, refund_id: uuid.UUID, customer_id: uuid.UUID, *, for_update: bool = False
+    ) -> RefundRequest | None:
+        """The customer's own refund; someone else's is None (looks missing)."""
+        stmt = select(RefundRequest).where(
+            RefundRequest.id == refund_id, RefundRequest.customer_id == customer_id
+        )
+        if for_update:
+            stmt = stmt.with_for_update()
+        return await self.session.scalar(stmt)
+
+    async def get_by_idempotency_key(
+        self, customer_id: uuid.UUID, key: str
+    ) -> RefundRequest | None:
+        return await self.session.scalar(
+            select(RefundRequest).where(
+                RefundRequest.customer_id == customer_id,
+                RefundRequest.idempotency_key == key,
+            )
+        )
+
+    async def list_owned(
+        self,
+        customer_id: uuid.UUID,
+        *,
+        status: RefundStatus | None = None,
+        after: tuple[datetime, uuid.UUID] | None = None,
+        limit: int,
+    ) -> Sequence[RefundRequest]:
+        """Newest first, keyset-paginated on `(created_at, id)`."""
+        stmt = select(RefundRequest).where(RefundRequest.customer_id == customer_id)
+        if status is not None:
+            stmt = stmt.where(RefundRequest.status == status)
+        if after is not None:
+            stmt = stmt.where(
+                tuple_(RefundRequest.created_at, RefundRequest.id) < tuple_(*after)
+            )
+        result = await self.session.scalars(
+            stmt.order_by(
+                RefundRequest.created_at.desc(), RefundRequest.id.desc()
+            ).limit(limit)
+        )
+        return result.all()

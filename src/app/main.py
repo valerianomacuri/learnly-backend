@@ -1,14 +1,17 @@
 import logging
-from collections.abc import AsyncIterator
+import uuid
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.problems import TRACE_HEADER, problem_response
 from app.api.routes import api_router
 from app.core.config import get_settings
 from app.core.database import get_engine
+from app.domain.errors import DomainProblem
 from app.repositories.policy import PolicyRepository
 from app.services.errors import (
     ConflictError,
@@ -32,6 +35,23 @@ def create_app() -> FastAPI:
     logging.basicConfig(level=settings.log_level)
 
     app = FastAPI(title=settings.app_name, lifespan=lifespan)
+
+    @app.middleware("http")
+    async def trace_id_middleware(
+        request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
+        # Propagate the caller's X-Request-ID (bounded) or mint one: it is the
+        # `trace_id` of problem+json bodies.
+        incoming = request.headers.get(TRACE_HEADER, "")
+        trace_id = incoming if 0 < len(incoming) <= 128 else str(uuid.uuid4())
+        request.state.trace_id = trace_id
+        response = await call_next(request)
+        response.headers[TRACE_HEADER] = trace_id
+        return response
+
+    @app.exception_handler(DomainProblem)
+    async def domain_problem_handler(request: Request, exc: DomainProblem) -> Response:
+        return problem_response(request, exc)
 
     @app.exception_handler(NotFoundError)
     async def not_found_handler(_: Request, exc: NotFoundError) -> JSONResponse:

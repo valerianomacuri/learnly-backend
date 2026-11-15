@@ -13,6 +13,7 @@ from app.services.auth_service import AuthService
 from app.services.eligibility_service import EligibilityService
 from app.services.me_service import MeService
 from app.services.purchase_service import PurchaseService
+from app.services.refund_service import RefundService
 from app.services.user_service import UserService
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
@@ -83,6 +84,11 @@ def get_eligibility_service(session: SessionDep) -> EligibilityService:
     return EligibilityService(session)
 
 
+def get_refund_service(session: SessionDep) -> RefundService:
+    return RefundService(session)
+
+
+RefundServiceDep = Annotated[RefundService, Depends(get_refund_service)]
 EligibilityServiceDep = Annotated[EligibilityService, Depends(get_eligibility_service)]
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
 UserServiceDep = Annotated[UserService, Depends(get_user_service)]

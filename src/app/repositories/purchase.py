@@ -20,14 +20,25 @@ class PurchaseRepository(BaseRepository[Purchase]):
     model = Purchase
 
     async def get_owned(
-        self, purchase_id: uuid.UUID, customer_id: uuid.UUID
+        self,
+        purchase_id: uuid.UUID,
+        customer_id: uuid.UUID,
+        *,
+        for_update: bool = False,
     ) -> Purchase | None:
-        """The purchase with its course and progress; None if missing or not theirs."""
-        return await self.session.scalar(
+        """The purchase with its course and progress; None if missing or not theirs.
+
+        `for_update` takes a row lock (`SELECT ... FOR UPDATE`) that serializes
+        concurrent creations on the same purchase until the transaction ends.
+        """
+        stmt = (
             select(Purchase)
             .where(Purchase.id == purchase_id, Purchase.customer_id == customer_id)
             .options(selectinload(Purchase.course), selectinload(Purchase.progress))
         )
+        if for_update:
+            stmt = stmt.with_for_update(of=Purchase)
+        return await self.session.scalar(stmt)
 
     async def list_owned(
         self,

@@ -42,10 +42,10 @@ Orden en `create_request` (una transacción): rol/permiso `refund:create` (BR-11
 - `schemas/refund.py` con `extra="forbid"`; el contrato de ejemplo del challenge §5 es el golden test.
 
 ## Tareas
-- [ ] Tests unitarios: máquina de estados, hash/token (cambiar un byte del payload invalida), BR-12.
-- [ ] `RefundRepository` (lock, conteos), `RefundService`, schemas, rutas, handlers problem+json, middleware `trace_id`.
-- [ ] Tests API con Postgres real: flujo feliz, 422 inelegible (+ fila en `eligibility_checks`), token vencido/ajeno/alterado, supervisor → 403, **20 POST concurrentes** con la misma clave (`asyncio.gather`, sesiones separadas) → 1 solicitud, misma clave con otro cuerpo → 409, doble solicitud por compra → 422 `ACTIVE_REFUND_EXISTS`, cancelar y volver a solicitar dentro de ventana, cancelar con versión vieja → 409, BOLA en `/refunds/{id}`.
-- [ ] Test de contrato del §5.
+- [x] Tests unitarios: máquina de estados, hash/token (cambiar un byte del payload invalida), BR-12.
+- [x] `RefundRepository` (lock, conteos), `RefundService`, schemas, rutas, handlers problem+json, middleware `trace_id`.
+- [x] Tests API con Postgres real: flujo feliz, 422 inelegible (+ fila en `eligibility_checks`), token vencido/ajeno/alterado, supervisor → 403, **20 POST concurrentes** con la misma clave (`asyncio.gather`, sesiones separadas) → 1 solicitud, misma clave con otro cuerpo → 409, doble solicitud por compra → 422 `ACTIVE_REFUND_EXISTS`, cancelar y volver a solicitar dentro de ventana, cancelar con versión vieja → 409, BOLA en `/refunds/{id}`.
+- [x] Test de contrato del §5.
 
 ## Criterios de aceptación
 - 20 `POST /refunds` concurrentes con la misma `Idempotency-Key` crean exactamente 1 solicitud y todos reciben la misma respuesta.

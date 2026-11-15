@@ -14,6 +14,7 @@ from app.domain.eligibility import (
 )
 from app.domain.enums import CheckSource
 from app.models.eligibility import EligibilityCheck
+from app.models.purchase import Purchase
 from app.repositories.eligibility_check import EligibilityCheckRepository
 from app.repositories.policy import PolicyRepository
 from app.repositories.purchase import PurchaseRepository
@@ -44,6 +45,16 @@ class EligibilityService:
         self, principal: Principal, purchase_id: uuid.UUID, source: CheckSource
     ) -> EligibilityResult:
         require_permission(principal, Perm.REFUND_SIMULATE)
+        result, _ = await self.evaluate(principal, purchase_id, source)
+        return result
+
+    async def evaluate(
+        self, principal: Principal, purchase_id: uuid.UUID, source: CheckSource
+    ) -> tuple[EligibilityResult, Purchase | None]:
+        """Gather facts, run the engine and record the check (no permission check).
+
+        Callers enforce their own permission (`refund:simulate` or `refund:create`).
+        """
         config = await self.policies.get_active_config()
         engine = RefundPolicyEngine(config, self.clock)
 
@@ -80,7 +91,7 @@ class EligibilityService:
 
         result = engine.evaluate(facts)
         await self._record(principal, purchase_id, source, result)
-        return result
+        return result, purchase
 
     async def _record(
         self,

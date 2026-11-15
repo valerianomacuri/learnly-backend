@@ -90,6 +90,8 @@ class RefundRequest(IdMixin, TimestampMixin, Base):
     )
     decision_note: Mapped[str | None] = mapped_column(Text, default=None)
     idempotency_key: Mapped[str] = mapped_column(Text)
+    # sha256 of the creation body (BR-15): same key + other body is a conflict.
+    request_hash: Mapped[str | None] = mapped_column(Text, default=None)
     # Optimistic lock checked explicitly against `If-Match` (not SQLAlchemy's
     # `version_id_col`): the services bump it on every transition.
     version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
