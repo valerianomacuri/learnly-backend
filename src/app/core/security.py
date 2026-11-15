@@ -28,7 +28,7 @@ class Principal:
 
     @property
     def sub(self) -> str:
-        """Stable string identity used for audit `actor`."""
+        """Stable string identity of the user."""
         return str(self.user_id)
 
     def has(self, permission: Perm | str) -> bool:

@@ -54,7 +54,7 @@ Every other route except `/health` requires `Authorization: Bearer <jwt>` signed
 `JWT_SECRET` (HS256), carrying only `sub` (the `User.id`), `iat` and `exp`; the lifetime
 is `ACCESS_TOKEN_TTL_MINUTES`. Roles and permissions are looked up in the database on
 every request (a token for an unknown user is `401`). A wrong password and an unknown
-email both answer `401 {"detail": "Invalid credentials"}`; login attempts are audited.
+email both answer `401 {"detail": "Invalid credentials"}`.
 
 Passwords (8–128 characters, used verbatim) are stored only as Argon2id hashes and are
 never returned. A supervisor creates users with `POST /api/v1/users`
@@ -163,7 +163,7 @@ src/app/
   main.py          FastAPI app factory, error handlers, /health
   api/             deps.py (dependency wiring, auth) + routes/ (HTTP layer)
   schemas/         Pydantic DTOs validating requests and shaping responses
-  services/        auth, user management, RBAC catalog sync, audit trail
+  services/        auth, user management, RBAC catalog sync
   repositories/    database access, one per entity; scope.py = ownership scoping
   models/          SQLAlchemy ORM models
   core/            config.py (validated env), database.py, security.py (JWT)
@@ -174,7 +174,7 @@ tests/             pytest suite
 
 ## Entities
 
-`User (email unique; roles M2M)`, `Role`, `Permission` and an append-only `AuditEvent`.
+`User (email unique; roles M2M)`, `Role`, and `Permission`.
 
 ### Listings
 

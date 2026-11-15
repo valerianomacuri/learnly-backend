@@ -9,7 +9,6 @@ from sqlalchemy import select, update
 
 from app.core.passwords import UNUSABLE_HASH
 from app.core.permissions import RoleName
-from app.models.audit_event import AuditDecision, AuditEvent
 from app.models.user import User
 
 API = "/api/v1"
@@ -168,32 +167,6 @@ async def test_customer_cannot_change_another_users_password(
     )
     assert resp.status_code == 404
     assert (await login(client, victim.email, victim.password)).status_code == 200
-
-
-async def test_login_attempts_are_audited_without_secrets(
-    client: AsyncClient, make_user: Any, session_maker: Any
-) -> None:
-    user = await make_user(RoleName.CUSTOMER)
-    await login(client, user.email, user.password)
-    await login(client, user.email, "wrong-password-1")
-    await login(client, "ghost@test.example", "wrong-password-2")
-    async with session_maker() as session:
-        events = (
-            await session.scalars(
-                select(AuditEvent).where(AuditEvent.action == "auth.login")
-            )
-        ).all()
-    assert sorted((e.actor, e.decision.value) for e in events) == sorted(
-        [
-            (str(user.id), AuditDecision.ALLOWED.value),
-            (str(user.id), AuditDecision.BLOCKED.value),
-            ("anonymous", AuditDecision.BLOCKED.value),
-        ]
-    )
-    dump = json.dumps([(e.reason, e.actor) for e in events])
-    assert (
-        "wrong-password" not in dump and "ghost@" not in dump and user.email not in dump
-    )
 
 
 async def test_login_is_public_and_a_bearer_token_is_not_needed(

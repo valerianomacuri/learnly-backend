@@ -21,7 +21,6 @@ from app.core.config import Settings, get_settings
 from app.core.passwords import UNUSABLE_HASH, hash_password
 from app.core.permissions import RoleName
 from app.core.security import create_access_token
-from app.models.audit_event import AuditEvent
 from app.models.rbac import Role
 from app.models.user import User
 from app.services.rbac import ensure_rbac
@@ -108,9 +107,6 @@ async def reset(session: AsyncSession) -> None:
     """Delete only the rows that belong to the seed users."""
     users = [user_id(spec.key) for spec in USERS]
     await session.execute(delete(User).where(User.id.in_(users)))  # cascades user_roles
-    await session.execute(
-        delete(AuditEvent).where(AuditEvent.actor.in_([str(uid) for uid in users]))
-    )
     await session.flush()
 
 

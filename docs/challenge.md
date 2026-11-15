@@ -351,7 +351,7 @@ class EligibilityResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
     eligible: bool
     reason_codes: list[ReasonCode] = []
-    warnings: list[Warning] = []          # p. ej. HIGH_REFUND_FREQUENCY (solo supervisor)
+    warnings: list[Warning] = []  # p. ej. HIGH_REFUND_FREQUENCY (solo supervisor)
     days_since_purchase: int
     refund_window_days: int
     progress_pct: int

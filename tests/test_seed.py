@@ -11,7 +11,6 @@ from app.cli.seed import USERS, UserSpec, render, reset, seed, sid, user_id
 from app.core.config import Settings
 from app.core.permissions import RoleName
 from app.core.security import decode_access_token
-from app.models.audit_event import AuditEvent
 from app.models.user import User
 
 TTL = timedelta(hours=1)
@@ -31,7 +30,7 @@ async def counts(maker: Maker) -> dict[str, int]:
             model.__tablename__: int(
                 await session.scalar(select(func.count()).select_from(model)) or 0
             )
-            for model in (User, AuditEvent)
+            for model in (User,)
         }
 
 
@@ -64,7 +63,6 @@ async def test_reset_removes_only_seed_users_and_seed_recreates(
     after_reset = await counts(session_maker)
     assert after_reset == {
         "users": 1,  # Eve is not a seed user, so she survives
-        "audit_events": 0,
     }
 
     await run_seed(session_maker)
