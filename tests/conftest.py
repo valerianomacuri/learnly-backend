@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
+from typing import Any
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -251,7 +252,23 @@ def make_refund(session_maker: async_sessionmaker[AsyncSession]) -> MakeRefund:
         reason_text: str = "The course content does not match its description.",
         method: RefundMethod = RefundMethod.ORIGINAL_PAYMENT,
         idempotency_key: str | None = None,
+        snapshot: dict[str, Any] | None = None,
     ) -> uuid.UUID:
+        # A complete snapshot by default: the customer schema must be able to read it.
+        stored = (
+            snapshot
+            if snapshot is not None
+            else {
+                "eligible": True,
+                "reason_codes": [],
+                "warnings": [],
+                "days_since_purchase": 5,
+                "refund_window_days": 30,
+                "progress_pct": 0,
+                "policy_version": "test",
+                "checked_at": datetime.now(UTC).isoformat(),
+            }
+        )
         async with session_maker() as session:
             refund = RefundRequest(
                 customer_id=purchase.customer_id,
@@ -263,7 +280,7 @@ def make_refund(session_maker: async_sessionmaker[AsyncSession]) -> MakeRefund:
                 amount=purchase.amount,
                 currency="USD",
                 channel=Channel.MANUAL_FORM,
-                eligibility_snapshot={},
+                eligibility_snapshot=stored,
                 policy_version="test",
                 idempotency_key=idempotency_key or uuid.uuid4().hex,
             )

@@ -116,6 +116,19 @@ class EligibilityWarning(enum.StrEnum):
     HIGH_REFUND_FREQUENCY = "HIGH_REFUND_FREQUENCY"
 
 
+class QueueSort(enum.StrEnum):
+    """Sort keys of the supervisor queue (`sla` = oldest first = most overdue first)."""
+
+    CREATED_AT = "created_at"
+    AMOUNT = "amount"
+    SLA = "sla"
+
+
+class SortOrder(enum.StrEnum):
+    ASC = "asc"
+    DESC = "desc"
+
+
 class CheckSource(enum.StrEnum):
     """Where an eligibility check came from (`eligibility_checks.source`)."""
 

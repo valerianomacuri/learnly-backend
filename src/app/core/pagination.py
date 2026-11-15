@@ -11,6 +11,22 @@ def encode_cursor(moment: datetime, row_id: uuid.UUID) -> str:
     return base64.urlsafe_b64encode(raw).decode().rstrip("=")
 
 
+def encode_keyset(value: str, row_id: uuid.UUID) -> str:
+    """Cursor for any sort key rendered as text (`(value, id)` of the last row)."""
+    raw = f"{value}|{row_id}".encode()
+    return base64.urlsafe_b64encode(raw).decode().rstrip("=")
+
+
+def decode_keyset(cursor: str) -> tuple[str, uuid.UUID]:
+    """Inverse of `encode_keyset`; raises `ValueError` for anything malformed."""
+    try:
+        padded = cursor + "=" * (-len(cursor) % 4)
+        value, _, row_id = base64.urlsafe_b64decode(padded).decode().partition("|")
+        return value, uuid.UUID(row_id)
+    except (binascii.Error, UnicodeDecodeError, ValueError) as exc:
+        raise ValueError("invalid cursor") from exc
+
+
 def decode_cursor(cursor: str) -> tuple[datetime, uuid.UUID]:
     """Inverse of `encode_cursor`; raises `ValueError` for anything malformed."""
     try:

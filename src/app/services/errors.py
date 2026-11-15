@@ -30,6 +30,36 @@ class IdempotencyConflict(DomainProblem):
     default_detail = "The Idempotency-Key was already used with a different body"
 
 
+class SelfApprovalForbidden(DomainProblem):
+    code = "SELF_APPROVAL_FORBIDDEN"
+    status = 403
+    default_detail = "A supervisor cannot decide their own refund request"
+
+
+class RefundNotPending(DomainProblem):
+    code = "REFUND_NOT_PENDING"
+    status = 409
+    default_detail = "The refund was already decided or is no longer pending"
+
+
+class DecisionNoteRequired(DomainProblem):
+    code = "DECISION_NOTE_REQUIRED"
+    status = 422
+    default_detail = "Rejecting a refund requires a note of at least 10 characters"
+
+
+class IfMatchRequired(DomainProblem):
+    code = "IF_MATCH_REQUIRED"
+    status = 428
+    default_detail = "The If-Match header with the refund version is required"
+
+
+class InvalidIfMatch(DomainProblem):
+    code = "INVALID_IF_MATCH"
+    status = 400
+    default_detail = "If-Match must be the refund version"
+
+
 class VersionConflict(DomainProblem):
     code = "VERSION_CONFLICT"
     status = 409

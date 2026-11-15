@@ -105,7 +105,13 @@ HISTORY_CUSTOMERS = (
     UserSpec("high-frequency", "Hugo Frost", "hugo@example.com", RoleName.CUSTOMER),
     UserSpec("abuse-limit", "Abby Lane", "abby@example.com", RoleName.CUSTOMER),
 )
-USERS = SUPERVISORS + CUSTOMERS + HISTORY_CUSTOMERS
+# Owners of the supervisor-queue demo data (spec 04). Separate from the customers
+# above so the per-customer counters of the 13 cases (BR-10) stay exact.
+QUEUE_CUSTOMERS = (
+    UserSpec("carol", "Carol Vega", "carol@example.com", RoleName.CUSTOMER),
+    UserSpec("erin", "Erin Walsh", "erin@example.com", RoleName.CUSTOMER),
+)
+USERS = SUPERVISORS + CUSTOMERS + HISTORY_CUSTOMERS + QUEUE_CUSTOMERS
 
 # `ann` plays the "cust1" of the challenge: the owner of most cases. `bob` is the
 # "other customer" whose purchase ann must not be able to see.
@@ -321,6 +327,91 @@ CASES = (
         owner=OTHER_CUSTOMER,
         asker=MAIN_CUSTOMER,
         reason_codes=("PURCHASE_NOT_FOUND",),
+    ),
+)
+
+
+@dataclass(frozen=True, slots=True)
+class QueueSpec:
+    """A refund request for the supervisor dashboard: state, age, channel, risk."""
+
+    key: str
+    owner: str
+    course: str
+    status: RefundStatus
+    age: timedelta  # of the request; the purchase is a day older
+    reason: ReasonCategory = ReasonCategory.NOT_AS_DESCRIBED
+    channel: Channel = Channel.MANUAL_FORM
+    method: RefundMethod = RefundMethod.ORIGINAL_PAYMENT
+    high_risk: bool = False
+    note: str | None = None  # decision note, for decided requests
+
+
+# Ages are relative to `now`, like the cases. The SLA is 48 h, so `breached` ones
+# are older than that and PENDING_APPROVAL (nothing ever auto-approves, BR-21).
+_PENDING = RefundStatus.PENDING_APPROVAL
+QUEUE_REFUNDS = (
+    QueueSpec("q-fresh", "carol", "react-19", _PENDING, timedelta(hours=2)),
+    QueueSpec(
+        "q-chat",
+        "erin",
+        "docker-k8s",
+        _PENDING,
+        timedelta(hours=20),
+        reason=ReasonCategory.TECHNICAL_ISSUES,
+        channel=Channel.CHAT,
+    ),
+    QueueSpec(
+        "q-near-sla",
+        "carol",
+        "ml-az",
+        _PENDING,
+        timedelta(hours=46),
+        reason=ReasonCategory.CONTENT_OUTDATED,
+    ),
+    QueueSpec(
+        "q-breached",
+        "erin",
+        "python-bootcamp",
+        _PENDING,
+        timedelta(hours=75),
+        reason=ReasonCategory.NOT_AS_DESCRIBED,
+        channel=Channel.CHAT,
+    ),
+    QueueSpec(
+        "q-breached-risk",
+        "carol",
+        "fastapi-prod",
+        _PENDING,
+        timedelta(hours=120),
+        reason=ReasonCategory.FOUND_ALTERNATIVE,
+        method=RefundMethod.PLATFORM_CREDITS,
+        high_risk=True,
+    ),
+    QueueSpec(
+        "q-approved",
+        "erin",
+        "postgres-dev",
+        RefundStatus.APPROVED,
+        timedelta(hours=30),
+        note="Approved after checking progress.",
+    ),
+    QueueSpec(
+        "q-rejected",
+        "carol",
+        "python-bootcamp",
+        RefundStatus.REJECTED,
+        timedelta(days=3),
+        reason=ReasonCategory.NO_LONGER_NEEDED,
+        note="Reason does not justify a refund under the policy.",
+    ),
+    QueueSpec(
+        "q-cancelled",
+        "erin",
+        "react-19",
+        RefundStatus.CANCELLED,
+        timedelta(days=2),
+        reason=ReasonCategory.ACCIDENTAL_PURCHASE,
     ),
 )
 
@@ -570,6 +661,87 @@ async def _seed_case(session: AsyncSession, case: CaseSpec, now: datetime) -> uu
     return pid
 
 
+async def _seed_queue_refund(
+    session: AsyncSession, spec: QueueSpec, now: datetime
+) -> None:
+    """One request of the supervisor dashboard, with the events its state implies."""
+    created_at = now - spec.age
+    purchase = await _ensure_purchase(
+        session,
+        spec.key,
+        owner=spec.owner,
+        course=spec.course,
+        purchased_at=created_at - timedelta(days=1),
+        progress=10,
+        now=now,
+    )
+    decided = spec.status in (RefundStatus.APPROVED, RefundStatus.REJECTED)
+    decided_at = created_at + timedelta(hours=6)
+    closed_at = decided_at if decided else created_at + timedelta(hours=1)
+    snapshot = {
+        "eligible": True,
+        "reason_codes": [],
+        "warnings": ["HIGH_REFUND_FREQUENCY"] if spec.high_risk else [],
+        "days_since_purchase": 1,
+        "refund_window_days": REFUND_WINDOW.days,
+        "progress_pct": 10,
+        "policy_version": POLICY_VERSION,
+        "checked_at": created_at.isoformat(),
+    }
+    refund_id = sid(f"refund:{spec.key}")
+    await _upsert(
+        session,
+        RefundRequest,
+        refund_id,
+        customer_id=user_id(spec.owner),
+        purchase_id=purchase,
+        status=spec.status,
+        reason_category=spec.reason,
+        reason_text="The course content does not match what the description promised.",
+        refund_method=spec.method,
+        amount=Decimal(COURSE_BY_KEY[spec.course].price),
+        currency=CURRENCY,
+        channel=spec.channel,
+        eligibility_snapshot=snapshot,
+        policy_version=POLICY_VERSION,
+        confirmed_at=created_at,
+        confirmation_hash=f"seed-{spec.key}",
+        decided_by=user_id(DECIDING_SUPERVISOR) if decided else None,
+        decided_at=decided_at if decided else None,
+        decision_note=spec.note if decided else None,
+        idempotency_key=f"seed-{spec.key}",
+        version=1 if spec.status is _PENDING else 2,
+        created_at=created_at,
+        updated_at=created_at if spec.status is _PENDING else closed_at,
+    )
+    await session.flush()
+
+    wanted: list[tuple[str, ActorType, str | None, datetime]] = [
+        ("REFUND_CREATED", ActorType.CUSTOMER, spec.owner, created_at)
+    ]
+    if spec.status is RefundStatus.APPROVED:
+        wanted.append(
+            ("REFUND_APPROVED", ActorType.SUPERVISOR, DECIDING_SUPERVISOR, decided_at)
+        )
+    elif spec.status is RefundStatus.REJECTED:
+        wanted.append(
+            ("REFUND_REJECTED", ActorType.SUPERVISOR, DECIDING_SUPERVISOR, decided_at)
+        )
+    elif spec.status is RefundStatus.CANCELLED:
+        wanted.append(("REFUND_CANCELLED", ActorType.CUSTOMER, spec.owner, closed_at))
+    events = RefundEventService(session)
+    existing = {e.type for e in await events.repo.list_for_refund(refund_id)}
+    for event_type, actor_type, actor, at in wanted:
+        if event_type not in existing:
+            await events.append(
+                refund_id,
+                event_type,
+                EventActor(actor_type, user_id(actor) if actor else None),
+                {"seed": True},
+                created_at=at,
+            )
+
+
 async def reset(session: AsyncSession) -> None:
     """Delete only the rows that belong to the seed users (and the seed courses)."""
     users = [user_id(spec.key) for spec in USERS]
@@ -631,6 +803,8 @@ async def seed(
     await _seed_courses(session)
     for case in CASES:
         report.cases.append(SeededCase(case, await _seed_case(session, case, now)))
+    for queue_spec in QUEUE_REFUNDS:
+        await _seed_queue_refund(session, queue_spec, now)
 
     for spec in USERS:
         report.tokens.append(
@@ -683,6 +857,13 @@ def render(report: SeedReport, *, show_tokens: bool, base_url: str) -> str:
         f'"{base_url}/api/v1/auth/login"   # -> {{"access_token": ...}}'
     )
     out.append(f'  curl -H "Authorization: Bearer {sup1}" "{base_url}/api/v1/users"')
+    out.append(
+        f'  curl -H "Authorization: Bearer {sup1}" '
+        f'"{base_url}/api/v1/supervisor/refunds?status=PENDING_APPROVAL&sla_breached=true"'
+    )
+    out.append(
+        f'  curl -H "Authorization: Bearer {sup1}" "{base_url}/api/v1/supervisor/stats"'
+    )
     out.append(f'  curl -H "Authorization: Bearer {ann}" "{base_url}/api/v1/me"')
     out.append(f'  curl -H "Authorization: Bearer {ann}" "{base_url}/api/v1/purchases"')
     out.append(

@@ -208,6 +208,34 @@ purchase.
 (substring, case-insensitive), `role`, `limit` (1-200, default 100) and `offset`,
 ordered by creation time.
 
+### Supervisor API (`/api/v1/supervisor/*`)
+
+Every route needs a supervisor token (customers get 403). `SLA_HOURS` (default 48)
+defines when a `PENDING_APPROVAL` request is over its SLA; it is computed per query
+and nothing is ever approved automatically.
+
+| Route | Purpose |
+| --- | --- |
+| `GET /refunds` | Queue. Filters `status`, `sla_breached`, `high_risk`, `channel`, `reason_category`, `created_from`, `created_to`, `customer` (name/email); `sort` = `created_at` (newest first), `amount` (highest first) or `sla` (most overdue first), `order=asc|desc`; opaque `cursor` + `limit` |
+| `GET /refunds/{id}` | Detail: full eligibility snapshot, purchase and progress, customer history, flags, policy citations, notes |
+| `POST /refunds/{id}/approve` / `reject` | Decide. `If-Match: <version>` is required (428 if missing, 400 if malformed); body `{"note": "..."}`; rejecting needs a note of at least 10 characters (422) |
+| `GET`/`POST /refunds/{id}/notes` | Internal notes (never visible to customers) |
+| `GET /refunds/{id}/events` | Full timeline, internal events and payloads included |
+| `GET /stats` | Pending, SLA breached, mean decision time, approval rate, top reasons |
+
+Decision errors: `403 SELF_APPROVAL_FORBIDDEN` (a supervisor cannot decide their own
+request), `409 REFUND_NOT_PENDING` (already decided; decisions are immutable),
+`409 VERSION_CONFLICT` (stale `If-Match`). Concurrent decisions on the same request
+serialize on a row lock: exactly one wins. Customer emails are always masked
+(`l***@gmail.com`). Approving only moves the state; the payout is spec 05.
+
+```bash
+curl -H "Authorization: Bearer $SUPERVISOR_1" \
+  "localhost:8000/api/v1/supervisor/refunds?status=PENDING_APPROVAL&sla_breached=true"
+curl -X POST -H "Authorization: Bearer $SUPERVISOR_1" -H "If-Match: 1" \
+  localhost:8000/api/v1/supervisor/refunds/<id>/approve -d '{}'
+```
+
 ## Specs
 
 Implementation specs live in [docs/specs/](docs/specs/README.md).
