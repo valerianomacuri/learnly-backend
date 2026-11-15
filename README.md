@@ -221,13 +221,15 @@ and nothing is ever approved automatically.
 | `POST /refunds/{id}/approve` / `reject` | Decide. `If-Match: <version>` is required (428 if missing, 400 if malformed); body `{"note": "..."}`; rejecting needs a note of at least 10 characters (422) |
 | `GET`/`POST /refunds/{id}/notes` | Internal notes (never visible to customers) |
 | `GET /refunds/{id}/events` | Full timeline, internal events and payloads included |
+| `POST /refunds/{id}/retry-payout` | Only for a `FAILED` payout (409 `REFUND_NOT_FAILED` otherwise): `FAILED -> PROCESSING`, new outbox event, 202 |
 | `GET /stats` | Pending, SLA breached, mean decision time, approval rate, top reasons |
 
 Decision errors: `403 SELF_APPROVAL_FORBIDDEN` (a supervisor cannot decide their own
 request), `409 REFUND_NOT_PENDING` (already decided; decisions are immutable),
 `409 VERSION_CONFLICT` (stale `If-Match`). Concurrent decisions on the same request
 serialize on a row lock: exactly one wins. Customer emails are always masked
-(`l***@gmail.com`). Approving only moves the state; the payout is spec 05.
+(`l***@gmail.com`). Approving writes the state change, the `refund_payouts` row and a
+`refund.payout` outbox event in one transaction; the worker pays (below).
 
 ```bash
 curl -H "Authorization: Bearer $SUPERVISOR_1" \
@@ -235,6 +237,27 @@ curl -H "Authorization: Bearer $SUPERVISOR_1" \
 curl -X POST -H "Authorization: Bearer $SUPERVISOR_1" -H "If-Match: 1" \
   localhost:8000/api/v1/supervisor/refunds/<id>/approve -d '{}'
 ```
+
+## Payout worker (spec 05)
+
+Approving and paying are separate steps. The worker takes due `PENDING` outbox events
+with `SELECT ... FOR UPDATE SKIP LOCKED` (several workers are safe), moves the refund
+`APPROVED -> PROCESSING`, pays through the gateway with `idempotency_key = refund_id`
+and, on success, completes it atomically: `purchase.status = REFUNDED`,
+`purchases.access_revoked_at` set, and a `credit_ledger` credit only for
+`PLATFORM_CREDITS` (unique per refund). Transient errors retry with exponential backoff
+(`PAYOUT_BACKOFF_BASE_SECONDS * 2^(n-1)`, at most `PAYOUT_MAX_ATTEMPTS` = 3); when
+exhausted the refund is `FAILED` and the event `DEAD`. Every step writes a `SYSTEM`
+`refund_events` row. The gateway is simulated (`app/workers/gateway.py`);
+`FAIL_RATE` (0..1) makes it fail randomly.
+
+```bash
+uv run payouts-worker --once        # drain the due events and exit
+uv run payouts-worker               # poll forever (PAYOUT_POLL_SECONDS)
+docker compose --profile dev up -d worker
+```
+
+A walkthrough without the LLM is in [docs/demo-sin-llm.md](docs/demo-sin-llm.md).
 
 ## Specs
 

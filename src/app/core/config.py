@@ -33,6 +33,12 @@ class Settings(BaseSettings):
     confirmation_ttl_min: int = Field(default=10, gt=0)
     sla_hours: int = Field(default=48, gt=0)
 
+    # Payout worker (spec 05)
+    payout_fail_rate: float = Field(default=0.0, ge=0, le=1, alias="FAIL_RATE")
+    payout_max_attempts: int = Field(default=3, gt=0)
+    payout_backoff_base_seconds: float = Field(default=30.0, ge=0)
+    payout_poll_seconds: float = Field(default=2.0, gt=0)
+
     # Directory with the policy .md files (default: `policies/` at the repo root)
     policies_dir: Path | None = None
 

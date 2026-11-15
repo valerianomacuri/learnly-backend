@@ -15,6 +15,7 @@ from app.domain.enums import (
     ActorType,
     Channel,
     EligibilityWarning,
+    PayoutStatus,
     QueueSort,
     ReasonCategory,
     RefundStatus,
@@ -22,8 +23,11 @@ from app.domain.enums import (
 )
 from app.domain.policy_config import ELIGIBILITY_DOC_KEY
 from app.domain.state_machine import transition
-from app.models.refund import RefundInternalNote, RefundRequest
+from app.models.outbox import OutboxEvent
+from app.models.refund import RefundInternalNote, RefundPayout, RefundRequest
 from app.models.user import User
+from app.repositories.outbox import TOPIC_REFUND_PAYOUT, OutboxRepository
+from app.repositories.payout import RefundPayoutRepository
 from app.repositories.policy import PolicyRepository
 from app.repositories.refund_event import RefundEventRepository
 from app.repositories.refund_note import RefundNoteRepository
@@ -39,6 +43,7 @@ from app.schemas.supervisor import (
     ReasonCount,
     RefundFlags,
     SupervisorEventRead,
+    SupervisorPayoutRead,
     SupervisorRefundDetail,
     SupervisorRefundPage,
     SupervisorRefundRead,
@@ -50,6 +55,7 @@ from app.services.errors import (
     DecisionNoteRequired,
     InvalidInputError,
     NotFoundError,
+    RefundNotFailed,
     RefundNotPending,
     SelfApprovalForbidden,
     VersionConflict,
@@ -61,6 +67,7 @@ EVENT_REJECTED = "REFUND_REJECTED"
 # Internal on purpose: not in `refund_service.PUBLIC_EVENT_TYPES`, so the customer
 # timeline filters it out. The payload carries the note id, never its text.
 EVENT_NOTE_ADDED = "NOTE_ADDED"
+EVENT_PROCESSING = "REFUND_PROCESSING"
 
 MIN_REJECTION_NOTE = 10
 _DEFAULT_DESCENDING = {
@@ -111,6 +118,8 @@ class SupervisorRefundService:
         self.event_reads = RefundEventRepository(session)
         self.events = RefundEventService(session)
         self.policies = PolicyRepository(session)
+        self.outbox = OutboxRepository(session)
+        self.payouts = RefundPayoutRepository(session)
 
     # ----------------------------------------------------------------- queue
 
@@ -218,10 +227,15 @@ class SupervisorRefundService:
                     else None
                 ),
             ),
+            payout=await self._payout_view(refund.id),
             customer_history=await self._history(refund.customer_id),
             citations=await self._citations(snapshot),
             notes=[NoteRead.model_validate(n) for n in notes],
         )
+
+    async def _payout_view(self, refund_id: uuid.UUID) -> SupervisorPayoutRead | None:
+        payout = await self.payouts.get_by_refund(refund_id)
+        return None if payout is None else SupervisorPayoutRead.model_validate(payout)
 
     async def _history(self, customer_id: uuid.UUID) -> CustomerHistory:
         by_status = await self.refunds.counts_by_status(customer_id)
@@ -324,6 +338,63 @@ class SupervisorRefundService:
             EventActor(ActorType.SUPERVISOR, principal.user_id),
             {"from": previous.value, "to": target.value, "version": refund.version},
         )
+        if target is RefundStatus.APPROVED:
+            # Same transaction as the state change (BR-22): all or nothing.
+            await self._enqueue_payout(refund, create=True)
+        customer = await self.session.get(User, refund.customer_id)
+        assert customer is not None  # FK
+        return self._to_read(refund, customer)
+
+    async def _enqueue_payout(self, refund: RefundRequest, *, create: bool) -> None:
+        if create:
+            await self.payouts.add(
+                RefundPayout(
+                    refund_id=refund.id,
+                    method=refund.refund_method,
+                    amount=refund.amount,
+                    idempotency_key=str(refund.id),
+                )
+            )
+        await self.outbox.add(
+            OutboxEvent(
+                topic=TOPIC_REFUND_PAYOUT,
+                payload={"refund_id": str(refund.id)},
+                available_at=self.clock(),
+            )
+        )
+
+    async def retry_payout(
+        self, principal: Principal, refund_id: uuid.UUID
+    ) -> SupervisorRefundRead:
+        """FAILED -> PROCESSING with a fresh outbox event; the worker pays again."""
+        require_permission(principal, Perm.REFUND_RETRY_PAYOUT)
+        refund = await self.refunds.get_for_update(refund_id)
+        if refund is None:
+            raise NotFoundError("Refund")
+        if refund.status is not RefundStatus.FAILED:
+            raise RefundNotFailed
+        payout = await self.payouts.get_by_refund(refund.id, for_update=True)
+        if payout is None:  # pragma: no cover - every approval creates one
+            raise RefundNotFailed
+
+        now = self.clock()
+        refund.status = transition(
+            refund.status, RefundStatus.PROCESSING, ActorType.SUPERVISOR
+        )
+        refund.version += 1
+        refund.updated_at = now
+        payout.status = PayoutStatus.PENDING
+        payout.attempts = 0
+        payout.last_error = None
+        payout.updated_at = now
+        await self.session.flush()
+        await self.events.append(
+            refund.id,
+            EVENT_PROCESSING,
+            EventActor(ActorType.SUPERVISOR, principal.user_id),
+            {"from": "FAILED", "to": "PROCESSING", "retry": True},
+        )
+        await self._enqueue_payout(refund, create=False)
         customer = await self.session.get(User, refund.customer_id)
         assert customer is not None  # FK
         return self._to_read(refund, customer)

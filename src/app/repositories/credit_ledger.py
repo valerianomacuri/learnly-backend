@@ -18,3 +18,8 @@ class CreditLedgerRepository(BaseRepository[CreditLedgerEntry]):
             )
         )
         return Decimal(total or 0)
+
+    async def get_for_refund(self, refund_id: uuid.UUID) -> CreditLedgerEntry | None:
+        return await self.session.scalar(
+            select(CreditLedgerEntry).where(CreditLedgerEntry.refund_id == refund_id)
+        )

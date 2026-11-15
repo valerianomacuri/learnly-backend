@@ -16,13 +16,15 @@ from app.domain.enums import ActorType, Channel, CheckSource, RefundStatus
 from app.domain.policy_config import ELIGIBILITY_DOC_KEY
 from app.domain.reason import validate_reason
 from app.domain.state_machine import transition
-from app.models.refund import RefundRequest
+from app.models.refund import RefundPayout, RefundRequest
+from app.repositories.payout import RefundPayoutRepository
 from app.repositories.policy import PolicyRepository
 from app.repositories.purchase import PurchaseRepository
 from app.repositories.refund_event import RefundEventRepository
 from app.repositories.refund_request import RefundRequestRepository
 from app.schemas.refund import (
     Citation,
+    PayoutRead,
     PreviewRequest,
     PreviewResult,
     RefundCreate,
@@ -93,6 +95,7 @@ class RefundService:
         self.events = RefundEventService(session)
         self.event_reads = RefundEventRepository(session)
         self.policies = PolicyRepository(session)
+        self.payouts = RefundPayoutRepository(session)
 
     @staticmethod
     def _secret() -> str:
@@ -252,6 +255,13 @@ class RefundService:
         return RefundRead.model_validate(refund)
 
     @staticmethod
+    def _read(refund: RefundRequest, payout: RefundPayout | None) -> RefundRead:
+        read = RefundRead.model_validate(refund)
+        if payout is not None:
+            read.payout = PayoutRead.model_validate(payout)
+        return read
+
+    @staticmethod
     def _replay(existing: RefundRequest, body_hash: str) -> RefundRead:
         """Same key and body: the original response (201 again); other body: 409."""
         if existing.request_hash != body_hash:
@@ -288,7 +298,8 @@ class RefundService:
         refund = await self.refunds.get_owned(refund_id, principal.user_id)
         if refund is None:
             raise NotFoundError("Refund")
-        return RefundRead.model_validate(refund)
+        payout = await self.payouts.get_by_refund(refund.id)
+        return self._read(refund, payout)
 
     async def list(
         self,
@@ -314,8 +325,10 @@ class RefundService:
             if len(rows) > limit
             else None
         )
+        payouts = await self.payouts.map_for_refunds([r.id for r in page])
         return RefundPage(
-            items=[RefundRead.model_validate(r) for r in page], next_cursor=next_cursor
+            items=[self._read(r, payouts.get(r.id)) for r in page],
+            next_cursor=next_cursor,
         )
 
     async def timeline(

@@ -44,6 +44,10 @@ class Purchase(IdMixin, TimestampMixin, Base):
         default=PurchaseStatus.ACTIVE,
         server_default=PurchaseStatus.ACTIVE.value,
     )
+    # Set when a refund completes (BR-23): the customer loses access to the course.
+    access_revoked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
 
     course: Mapped[Course] = relationship(lazy="raise")
     progress: Mapped["CourseProgress | None"] = relationship(

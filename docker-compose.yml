@@ -31,5 +31,17 @@ services:
     ports:
       - "8000:8000"
 
+  worker:
+    profiles: ["dev"]
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-customer_support}
+    command: ["payouts-worker"]
+    depends_on:
+      db:
+        condition: service_healthy
+
 volumes:
   pgdata:

@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.domain.enums import (
     ActorType,
     Channel,
+    PayoutStatus,
     ReasonCategory,
     ReasonCode,
     RefundMethod,
@@ -62,6 +63,16 @@ class EligibilitySnapshotRead(BaseModel):
     checked_at: datetime
 
 
+class PayoutRead(BaseModel):
+    """Payout progress for the owner: status only, never errors or provider refs."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    status: PayoutStatus
+    method: RefundMethod
+    amount: Money
+
+
 class RefundRead(BaseModel):
     """A refund as its owner sees it: no internal notes, no `warnings`."""
 
@@ -84,6 +95,8 @@ class RefundRead(BaseModel):
     version: int
     created_at: datetime
     updated_at: datetime
+    # Filled by the service on reads; absent until the refund is approved.
+    payout: PayoutRead | None = None
 
 
 class RefundPage(BaseModel):

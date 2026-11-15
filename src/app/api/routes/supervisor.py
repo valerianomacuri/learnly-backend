@@ -26,6 +26,7 @@ router = APIRouter(prefix="/supervisor", tags=["supervisor"])
 
 ReaderDep = Annotated[Principal, Depends(requires(Perm.REFUND_READ_ANY))]
 DeciderDep = Annotated[Principal, Depends(requires(Perm.REFUND_DECIDE))]
+PayoutRetrierDep = Annotated[Principal, Depends(requires(Perm.REFUND_RETRY_PAYOUT))]
 NoteWriterDep = Annotated[Principal, Depends(requires(Perm.NOTE_WRITE))]
 NoteReaderDep = Annotated[Principal, Depends(requires(Perm.NOTE_READ))]
 
@@ -124,6 +125,19 @@ async def reject_refund(
         if_match=version,
         note=body.note if body is not None else None,
     )
+
+
+@router.post(
+    "/refunds/{refund_id}/retry-payout",
+    response_model=SupervisorRefundRead,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def retry_payout(
+    refund_id: uuid.UUID,
+    service: SupervisorRefundServiceDep,
+    principal: PayoutRetrierDep,
+) -> SupervisorRefundRead:
+    return await service.retry_payout(principal, refund_id)
 
 
 @router.get("/refunds/{refund_id}/notes", response_model=list[NoteRead])

@@ -19,11 +19,11 @@ Aprobar y pagar son operaciones separadas. Al aprobar se escribe un evento de ou
 - Al ser el hito sin LLM, ampliar `GET /me` (saldo de créditos) y el detalle del customer para mostrar `payout.status`.
 
 ## Tareas
-- [ ] Tests primero (con gateway falso): éxito → `COMPLETED` + compra `REFUNDED` + ledger si créditos; fallo → reintentos con backoff (reloj inyectable) → `FAILED`; retry manual → `COMPLETED`; **doble ejecución del mismo evento no duplica ledger ni pago**; dos workers concurrentes procesan cada evento una sola vez (`SKIP LOCKED`).
-- [ ] Atomicidad: si falla la inserción del ledger, la compra no queda `REFUNDED` (rollback del pago local).
-- [ ] Aprobar escribe outbox en la misma transacción (test forzando error tras el UPDATE → ni estado ni outbox).
-- [ ] Worker CLI + servicio `docker compose` `worker` (perfil dev) y documentación en README.
-- [ ] Tras aprobar, la compra ya no es elegible (`ALREADY_REFUNDED`) — test de integración con el engine.
+- [x] Tests primero (con gateway falso): éxito → `COMPLETED` + compra `REFUNDED` + ledger si créditos; fallo → reintentos con backoff (reloj inyectable) → `FAILED`; retry manual → `COMPLETED`; **doble ejecución del mismo evento no duplica ledger ni pago**; dos workers concurrentes procesan cada evento una sola vez (`SKIP LOCKED`).
+- [x] Atomicidad: si falla la inserción del ledger, la compra no queda `REFUNDED` (rollback del pago local).
+- [x] Aprobar escribe outbox en la misma transacción (test forzando error tras el UPDATE → ni estado ni outbox).
+- [x] Worker CLI + servicio `docker compose` `worker` (perfil dev) y documentación en README.
+- [x] Tras aprobar, la compra ya no es elegible (`ALREADY_REFUNDED`) — test de integración con el engine.
 
 ## Criterios de aceptación
 - Aprobar → worker → `COMPLETED`; `purchase.status = REFUNDED`; saldo de créditos sube solo para `PLATFORM_CREDITS`.

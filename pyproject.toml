@@ -24,6 +24,7 @@ dependencies = [
 [project.scripts]
 seed = "app.cli.seed:main"
 policies-load = "app.policy.load:main"
+payouts-worker = "app.workers.payouts:main"
 
 [dependency-groups]
 dev = [

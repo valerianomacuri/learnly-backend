@@ -186,9 +186,14 @@ class RefundPayout(IdMixin, TimestampMixin, Base):
 
 
 class CreditLedgerEntry(IdMixin, Base):
-    """Append-only by convention (no UPDATE/DELETE): balance = SUM(delta)."""
+    """Append-only by convention (no UPDATE/DELETE): balance = SUM(delta).
+
+    `refund_id` is unique: a refund credits the ledger at most once, even if the
+    payout worker runs the same event twice (NULLs stay allowed for other entries).
+    """
 
     __tablename__ = "credit_ledger"
+    __table_args__ = (UniqueConstraint("refund_id"),)
 
     customer_id: Mapped[uuid.UUID] = mapped_column(
         Uuid, ForeignKey("users.id"), index=True

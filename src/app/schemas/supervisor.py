@@ -16,6 +16,7 @@ from app.domain.enums import (
     Channel,
     EligibilityWarning,
     PaymentMethod,
+    PayoutStatus,
     PurchaseStatus,
     PurchaseType,
     ReasonCategory,
@@ -131,7 +132,22 @@ class NoteRead(BaseModel):
     created_at: datetime
 
 
+class SupervisorPayoutRead(BaseModel):
+    """Payout execution as the supervisor sees it (errors and provider ref included)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    status: PayoutStatus
+    method: RefundMethod
+    amount: Money
+    attempts: int
+    last_error: str | None
+    provider_ref: str | None
+    updated_at: datetime
+
+
 class SupervisorRefundDetail(SupervisorRefundRead):
+    payout: SupervisorPayoutRead | None = None
     eligibility: SupervisorSnapshot
     purchase: PurchaseReview
     customer_history: CustomerHistory

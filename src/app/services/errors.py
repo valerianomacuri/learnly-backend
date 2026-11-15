@@ -64,3 +64,9 @@ class VersionConflict(DomainProblem):
     code = "VERSION_CONFLICT"
     status = 409
     default_detail = "The refund changed since you read it (If-Match mismatch)"
+
+
+class RefundNotFailed(DomainProblem):
+    code = "REFUND_NOT_FAILED"
+    status = 409
+    default_detail = "Only a refund whose payout FAILED can be retried"
