@@ -37,14 +37,14 @@ Chat funcional para los caminos de **solo lectura**: preguntas de política con 
 `agent/sse.py`: serialización de eventos (`event:` + `data:` JSON con `id` incremental), test de contrato.
 
 ## Tareas
-- [ ] Tests primero: registro de tools (sin `customer_id`/`role`, sin tools prohibidas), BOLA de tools (ajeno → `PURCHASE_NOT_FOUND`), `ToolResult` de error.
-- [ ] Factory LLM + `FakeChatModel`; fixtures de grafo.
-- [ ] Servicios/tools de lectura y `escalate_to_human`.
-- [ ] Nodos y ensamblado del grafo; checkpointer Postgres (tablas del saver vía `setup()` en migración/arranque).
-- [ ] Endpoints + SSE + test de contrato de eventos.
-- [ ] Trayectorias con LLM falso: pregunta de política con cita; estado de una solicitud; fuera de alcance → handoff; sin evidencia → "no sé" + handoff; clasificador con fallo ×2 → palabras clave.
-- [ ] Test de aislamiento: hilo ajeno → 404; el supervisor no puede usar `/chat` (403).
-- [ ] Prueba manual con OpenAI real (`live`).
+- [x] Tests primero: registro de tools (sin `customer_id`/`role`, sin tools prohibidas), BOLA de tools (ajeno → `PURCHASE_NOT_FOUND`), `ToolResult` de error.
+- [x] Factory LLM + `FakeChatModel`; fixtures de grafo.
+- [x] Servicios/tools de lectura y `escalate_to_human`.
+- [x] Nodos y ensamblado del grafo; checkpointer Postgres (tablas del saver vía `setup()` en migración/arranque).
+- [x] Endpoints + SSE + test de contrato de eventos.
+- [x] Trayectorias con LLM falso: pregunta de política con cita; estado de una solicitud; fuera de alcance → handoff; sin evidencia → "no sé" + handoff; clasificador con fallo ×2 → palabras clave.
+- [x] Test de aislamiento: hilo ajeno → 404; el supervisor no puede usar `/chat` (403).
+- [x] Prueba manual con OpenAI real (`live`): `uv run pytest -m live tests/agent` (`tests/agent/test_agent_live.py`, requiere `OPENAI_API_KEY`).
 
 ## Criterios de aceptación
 - Pregunta de política: respuesta con citas reales y sin cifras fuera de `PolicyConfig`.

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import app.domain
 
-FORBIDDEN = ("sqlalchemy", "fastapi", "app.services")
+FORBIDDEN = ("sqlalchemy", "fastapi", "app.services", "app.agent")
 
 
 def _imports(path: Path) -> list[str]:
@@ -41,7 +41,12 @@ def test_rag_does_not_depend_on_the_web_layer() -> None:
     import app.rag
 
     root = Path(app.rag.__file__).parent
-    web = [v for v in violations_for(root, ("fastapi", "app.api", "app.services"))]
+    web = [
+        v
+        for v in violations_for(
+            root, ("fastapi", "app.api", "app.services", "app.agent")
+        )
+    ]
     assert web == []
 
 
@@ -52,3 +57,11 @@ def violations_for(root: Path, forbidden: tuple[str, ...]) -> list[str]:
         for name in _imports(path)
         if any(name == f or name.startswith(f + ".") for f in forbidden)
     ]
+
+
+def test_agent_does_not_depend_on_the_web_layer() -> None:
+    """The agent uses services (like REST does) but never routes or FastAPI."""
+    import app.agent
+
+    root = Path(app.agent.__file__).parent
+    assert violations_for(root, ("fastapi", "app.api")) == []

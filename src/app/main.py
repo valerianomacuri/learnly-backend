@@ -1,17 +1,18 @@
 import logging
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agent.runtime import start_runtime
 from app.api.problems import TRACE_HEADER, problem_response
 from app.api.routes import api_router
 from app.core.config import get_settings
-from app.core.database import get_engine
+from app.core.database import get_engine, get_sessionmaker
 from app.domain.errors import DomainProblem
 from app.repositories.policy import PolicyRepository
 from app.services.errors import (
@@ -27,7 +28,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Fail fast: the app needs a complete ACTIVE policy (`uv run policies-load`).
     async with AsyncSession(get_engine()) as session:
         await PolicyRepository(session).get_active_config()
-    yield
+    async with AsyncExitStack() as stack:
+        # `None` without OPENAI_API_KEY: the chat answers 503, the rest works.
+        app.state.agent_runtime = await start_runtime(get_sessionmaker(), stack)
+        yield
     await get_engine().dispose()
 
 

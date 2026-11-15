@@ -53,6 +53,9 @@ class Settings(BaseSettings):
     embedding_model: str = "text-embedding-3-small"
     embedding_dim: int = Field(default=1536, gt=0)
     llm_model: str = "gpt-4o-mini"
+    # Agent (spec 09): per-call LLM timeout and the client's own retries
+    llm_timeout_s: float = Field(default=30.0, gt=0)
+    llm_max_retries: int = Field(default=2, ge=0)
     relevance_threshold: float = Field(default=0.25, ge=0, le=1)
     rerank_model: str = "BAAI/bge-reranker-base"
 
