@@ -22,6 +22,19 @@ class PolicyRepository(BaseRepository[PolicyDocument]):
         )
         return list(result.all())
 
+    async def get_trusted_figures(self) -> frozenset[str]:
+        """Integer parameters declared in the front-matter of the ACTIVE documents.
+
+        These are the curated figures a policy answer may state (a superset of
+        `PolicyConfig`); numbers that merely appear in a document body are not.
+        """
+        figures: set[str] = set()
+        for document in await self.list_active():
+            for value in document.params.values():
+                if isinstance(value, int) and not isinstance(value, bool):
+                    figures.add(str(value))
+        return frozenset(figures)
+
     async def get_active_config(self) -> PolicyConfig:
         """The active policy parameters (`PolicyConfigError` if incomplete)."""
         global _cache

@@ -1,0 +1,22 @@
+# Thresholds of the RAG evals (spec 08). A metric below its threshold fails the run
+# (exit code 1). `min`: value >= threshold; `max`: value < threshold.
+#
+# `[full]` is the real bar (OPENAI_API_KEY: real embeddings, LLM and judges).
+# `[offline]` applies to `--offline` (FakeEmbeddings + extractive fake LLM): it only
+# gates what is meaningful without a model: lexical retrieval and figures. The
+# bag-of-words embedder cannot cross languages, so its Recall@5 bar is lower; the
+# model-dependent metrics are reported but not gated.
+
+[full]
+recall_at_5 = 0.90
+faithfulness = 0.95
+citation_precision = 0.90
+correct_abstention = 0.90
+correct_figures = 1.0
+latency_p95_s = 4.0
+poisoned_leaks = 0
+
+[offline]
+recall_at_5 = 0.70
+correct_figures = 1.0
+poisoned_leaks = 0

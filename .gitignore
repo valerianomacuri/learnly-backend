@@ -16,3 +16,6 @@ wheels/
 .mypy_cache/
 .pytest_cache/
 .ruff_cache/
+
+# RAG eval reports (the ablation is summarised in docs/adr/0004-chunking.md)
+reports/

@@ -33,13 +33,21 @@ Mismo set, mismos modelos y retriever; solo cambia `--strategy`. Reporte compara
 ### Makefile
 `make evals` → `rag-evals` (y luego se le suma el agente en 13).
 
+## Notas de implementación (desvíos)
+- Código en `src/app/rag/evals/` (`metrics`, `golden`, `judges`, `fakes`, `runner`, `report`, `run`); umbrales en `evals/thresholds.toml` con dos secciones: `[full]` (la barra del spec) y `[offline]` (solo Recall@5 léxico, cifras y fugas; Recall@5 ≥ 0,70 porque el embedder falso no cruza idiomas).
+- `expected_sections` admite equivalentes `A || B` donde el corpus dice lo mismo en la regla y en la FAQ. El set dorado tiene 79 preguntas (33 % en inglés, 15 % `should_abstain`). Para `fixed_500` (sin estructura) un chunk cubre una sección si contiene la mitad de sus frases.
+- La BD de evals es `<DATABASE_URL>_evals` (o `EVALS_DATABASE_URL`), se crea sola y se recrea en cada corrida; el nombre debe contener `eval`.
+- Hallazgo: la verificación de cifras del 07 aceptaba números presentes en el contexto, así que un chunk envenenado dejaba pasar "90 días". Se añadió `PolicyAnswerer(trusted_figures=)` (parámetros enteros del front-matter de los documentos ACTIVE), que `ask` y los evals usan. Sin él el comportamiento es el del 07. La defensa contra injection propiamente dicha sigue en el 12.
+- Se añadió Precisión@5 del contexto como métrica informativa. Los tokens son una estimación offline. Resultados de la ablación en `docs/adr/0004-chunking.md`: estructural no gana en Recall@5 (corpus de 10 chunks fijos); gana en abstención, costo y MRR.
+- `make` no está en Windows: usar `uv run python -m app.rag.evals.run --offline`.
+
 ## Tareas
-- [ ] Redactar el set dorado (usar los documentos reales de `policies/`; revisar a mano cada `expected_sections`).
-- [ ] Implementar métricas con funciones puras + tests unitarios de las métricas (casos sintéticos).
-- [ ] Runner, reporte y umbrales; modo `--offline`.
-- [ ] Corpus envenenado y test del escenario.
-- [ ] Ejecutar ablación y guardar el reporte; si estructural no gana, investigar antes de seguir (es parte del argumento del challenge).
-- [ ] Marcar los evals con claves reales como `live` y fuera de la suite por defecto.
+- [x] Redactar el set dorado (usar los documentos reales de `policies/`; revisar a mano cada `expected_sections`).
+- [x] Implementar métricas con funciones puras + tests unitarios de las métricas (casos sintéticos).
+- [x] Runner, reporte y umbrales; modo `--offline`.
+- [x] Corpus envenenado y test del escenario.
+- [x] Ejecutar ablación y guardar el reporte; si estructural no gana, investigar antes de seguir (es parte del argumento del challenge).
+- [x] Marcar los evals con claves reales como `live` y fuera de la suite por defecto.
 
 ## Criterios de aceptación
 - `make evals` imprime la tabla de métricas y falla si baja de un umbral.

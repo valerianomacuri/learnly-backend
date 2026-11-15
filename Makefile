@@ -1,4 +1,4 @@
-.PHONY: install db migrate seed run test lint typecheck evals check
+.PHONY: install db migrate seed run test lint typecheck rag-evals rag-evals-live evals check
 
 install:
 	uv sync
@@ -25,7 +25,15 @@ lint:
 typecheck:
 	uv run mypy
 
-evals:
-	@echo "evals: placeholder (filled in specs 08/13)"
+# RAG evals (spec 08). Offline: fake embeddings + extractive LLM, no key needed.
+rag-evals:
+	uv run python -m app.rag.evals.run --offline
+
+# Full mode: real embeddings, LLM and judges (needs OPENAI_API_KEY).
+rag-evals-live:
+	uv run python -m app.rag.evals.run
+
+# Agent evals are added in spec 13.
+evals: rag-evals
 
 check: lint typecheck test evals

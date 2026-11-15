@@ -73,12 +73,25 @@ def _numbers(text: str) -> set[str]:
     return {_normalize(m.group(1)) for m in _NUMBER.finditer(text)}
 
 
-def allowed_numbers(config: PolicyConfig, chunks: list[RetrievedChunk]) -> set[str]:
+def allowed_numbers(
+    config: PolicyConfig,
+    chunks: list[RetrievedChunk],
+    trusted: frozenset[str] | None = None,
+) -> set[str]:
+    """Figures an answer may state.
+
+    With `trusted` (the front-matter parameters of the active documents) only those
+    and `PolicyConfig` count: a figure that merely appears in a retrieved chunk is
+    not enough, so a poisoned document cannot launder "90 días" (spec 08). Without
+    it, literal figures of the retrieved context are accepted too (spec 07).
+    """
     allowed = {
         str(value)
         for value in config.model_dump().values()
         if isinstance(value, int) and not isinstance(value, bool)
     }
+    if trusted is not None:
+        return allowed | set(trusted)
     for chunk in chunks:
         allowed |= {
             _normalize(n.group(0)) for n in re.finditer(r"\d+(?:\.\d+)?", chunk.content)
@@ -87,10 +100,13 @@ def allowed_numbers(config: PolicyConfig, chunks: list[RetrievedChunk]) -> set[s
 
 
 def unverified_numbers(
-    answer: str, config: PolicyConfig, chunks: list[RetrievedChunk]
+    answer: str,
+    config: PolicyConfig,
+    chunks: list[RetrievedChunk],
+    trusted: frozenset[str] | None = None,
 ) -> list[str]:
     """Day/percentage figures of `answer` that the policy does not support."""
-    allowed = allowed_numbers(config, chunks)
+    allowed = allowed_numbers(config, chunks, trusted)
     return sorted(n for n in _numbers(answer) if n not in allowed)
 
 
@@ -111,11 +127,16 @@ def _context(chunks: list[RetrievedChunk]) -> str:
 
 class PolicyAnswerer:
     def __init__(
-        self, retriever: PolicyRetriever, llm: ChatModel, config: PolicyConfig
+        self,
+        retriever: PolicyRetriever,
+        llm: ChatModel,
+        config: PolicyConfig,
+        trusted_figures: frozenset[str] | None = None,
     ) -> None:
         self.retriever = retriever
         self.llm = llm
         self.config = config
+        self.trusted_figures = trusted_figures
 
     def _abstain(self, language: str) -> PolicyAnswer:
         return PolicyAnswer(
@@ -183,7 +204,9 @@ class PolicyAnswerer:
 
         draft = self._generate(question, retrieval, "")
         for attempt in (1, 2):
-            bad = unverified_numbers(draft.answer, self.config, retrieval.chunks)
+            bad = unverified_numbers(
+                draft.answer, self.config, retrieval.chunks, self.trusted_figures
+            )
             if not bad:
                 break
             trace.append(f"numbers: unsupported {bad} (attempt {attempt})")

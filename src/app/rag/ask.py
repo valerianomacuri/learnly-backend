@@ -22,11 +22,13 @@ async def _ask(question: str, history: tuple[str, ...]) -> AnswerResult:
     engine = create_async_engine(get_settings().database_url)
     try:
         async with async_sessionmaker(engine, expire_on_commit=False)() as session:
-            config = await PolicyRepository(session).get_active_config()
+            policies = PolicyRepository(session)
+            config = await policies.get_active_config()
+            trusted = await policies.get_trusted_figures()
             retriever = PolicyRetriever(
                 session, embedder, llm=llm, reranker=get_reranker()
             )
-            return await PolicyAnswerer(retriever, llm, config).answer(
+            return await PolicyAnswerer(retriever, llm, config, trusted).answer(
                 question, history=history
             )
     finally:
