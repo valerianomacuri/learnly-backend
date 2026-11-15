@@ -41,4 +41,13 @@ async def guard_input(state: SupportState) -> dict[str, Any]:
 
 
 def route_guard(state: SupportState) -> str:
-    return "respond" if state.get("blocked") else "classify_intent"
+    if state.get("blocked"):
+        return "respond"
+    # The previous turn asked the customer something: the answer goes to the flow.
+    match state.get("awaiting"):
+        case "purchase" | "reason":
+            return "collect_refund_info"
+        case "refund":
+            return "cancel_refund_flow"
+        case _:
+            return "classify_intent"

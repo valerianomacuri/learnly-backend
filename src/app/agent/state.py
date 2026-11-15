@@ -21,7 +21,24 @@ class Intent(enum.StrEnum):
 class SupportState(TypedDict, total=False):
     messages: Annotated[list[AnyMessage], add_messages]
     intent: str | None
-    awaiting: Literal["purchase", "reason"] | None
+    awaiting: Literal["purchase", "reason", "refund"] | None
+    # Refund flow (spec 10). Everything is plain JSON so the checkpoint serializes it;
+    # none of it is ever built from model output without validation.
+    purchase_candidates: list[dict[str, Any]]
+    selected_purchase_id: str | None
+    reason_category: str | None
+    reason_text: str | None
+    reason_edited: bool
+    eligibility: dict[str, Any] | None
+    # Public card shown to the customer (what the interrupt carries).
+    pending_confirmation: dict[str, Any] | None
+    # Signed proof of the card: kept apart, never put in a message or tool result.
+    confirmation_token: str | None
+    confirmation_hash: str | None
+    confirmation_route: str
+    refund_id: str | None
+    cancel_candidates: list[dict[str, Any]]
+    cancel_target: dict[str, Any] | None
     # Plain dicts so the checkpoint stays serializable: {"doc_key", "section_path"}.
     citations: list[dict[str, str]]
     guardrail_flags: list[str]
@@ -47,4 +64,5 @@ def turn_reset() -> dict[str, Any]:
         "needs_handoff": False,
         "handoff_reason": "",
         "intent": None,
+        "confirmation_route": "end",
     }

@@ -1,16 +1,23 @@
 """Helpers of the agent tests (no conftest here: it would shadow the root one)."""
 
 import uuid
+from collections.abc import Callable
+from dataclasses import replace
+from datetime import datetime
 from typing import Any
 
 from langchain_core.messages import AIMessage
+from langchain_core.runnables import RunnableConfig
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import InMemorySaver
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.agent.deps import AgentDeps
 from app.agent.graph import build_graph
 from app.agent.llm import FakeChatModel
+from app.agent.nodes.cancel_refund import CancelChoice
 from app.agent.nodes.classify_intent import IntentResult
+from app.agent.nodes.collect_refund_info import CollectResult
 from app.agent.runtime import AgentRuntime
 from app.agent.state import Intent
 from app.core.permissions import RoleName
@@ -27,13 +34,20 @@ Events = list[tuple[str, dict[str, Any]]]
 
 
 def make_runtime(
-    maker: Maker, llm: FakeChatModel, *, threshold: float = 0.2
+    maker: Maker,
+    llm: FakeChatModel,
+    *,
+    threshold: float = 0.2,
+    checkpointer: BaseCheckpointSaver[Any] | None = None,
+    clock: Callable[[], datetime] | None = None,
 ) -> AgentRuntime:
     def retriever_factory(session: AsyncSession) -> PolicyRetriever:
         return PolicyRetriever(session, FakeEmbeddings(), threshold=threshold)
 
     deps = AgentDeps(maker, llm, retriever_factory, llm_timeout_s=5)
-    return AgentRuntime(build_graph(deps, InMemorySaver()), maker)
+    if clock is not None:
+        deps = replace(deps, clock=clock)
+    return AgentRuntime(build_graph(deps, checkpointer or InMemorySaver()), maker)
 
 
 def scripted_llm(
@@ -81,3 +95,46 @@ def final_of(events: Events) -> dict[str, Any]:
     finals = [data for name, data in events if name == "final"]
     assert len(finals) == 1, events
     return finals[0]
+
+
+def config_for(
+    runtime: AgentRuntime, user_id: uuid.UUID, thread_id: uuid.UUID
+) -> RunnableConfig:
+    principal = Principal.for_roles(user_id, [RoleName.CUSTOMER])
+    return runtime.config(principal, thread_id, "trace-test")
+
+
+async def resume(
+    runtime: AgentRuntime,
+    user_id: uuid.UUID,
+    thread_id: uuid.UUID,
+    value: dict[str, Any],
+) -> Events:
+    config = config_for(runtime, user_id, thread_id)
+    return [event async for event in runtime.resume(config, value)]
+
+
+async def pending(
+    runtime: AgentRuntime, user_id: uuid.UUID, thread_id: uuid.UUID
+) -> dict[str, Any] | None:
+    return await runtime.pending_interrupt(config_for(runtime, user_id, thread_id))
+
+
+def interrupt_of(events: Events) -> dict[str, Any]:
+    cards = [data for name, data in events if name == "interrupt"]
+    assert len(cards) == 1, events
+    return cards[0]
+
+
+def refund_flow_llm(
+    intents: Intent | list[Intent],
+    collect: list[CollectResult],
+    *,
+    script: list[AIMessage | Exception] | None = None,
+    cancel_choice: list[CancelChoice] | None = None,
+) -> FakeChatModel:
+    """Fake LLM for the refund flow: intents, extraction results, narration."""
+    llm = scripted_llm(intents, script=script)
+    llm.structured["CollectResult"] = list(collect)
+    llm.structured["CancelChoice"] = list(cancel_choice or [])
+    return llm

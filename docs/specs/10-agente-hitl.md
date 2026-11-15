@@ -32,12 +32,12 @@ El agente puede crear y cancelar solicitudes **solo** tras confirmación humana 
 `GET /chat/threads/{id}/messages` incluye el interrupt pendiente si existe.
 
 ## Tareas
-- [ ] Tests de herramientas: la tool 6 rechaza si falta `confirmation_proof` o si el hash no coincide; la tool 9 solo en `PENDING_APPROVAL`; ambas fuera de `LLM_BOUND_TOOLS`.
-- [ ] Trayectorias del grafo con LLM falso (cada una un test): **feliz** (pide → razón → elegible → interrupt → confirm → solicitud `CHAT` creada), **inelegible** (explica con cita, 0 escrituras), **cancela en el HITL** (0 escrituras), **edita la razón** (vuelve a recolectar), **interrupt vencido** (tarjeta nueva), **falta razón** (no llega a confirmación), **injection** dentro de `reason_text` (no cambia monto/método/compra; la confirmación muestra el payload real).
-- [ ] Idempotencia: reintentar el nodo `create_refund` tras un fallo no duplica (misma `Idempotency-Key`).
-- [ ] Endpoints `resume`/`pending-interrupt`, evento SSE `interrupt`, 409s.
-- [ ] Reanudación tras reinicio del proceso: crear interrupt, reiniciar app (nuevo grafo/checkpointer), `resume` funciona.
-- [ ] Verificar que la solicitud creada por el agente aparece en la cola del supervisor con `channel=CHAT`.
+- [x] Tests de herramientas: la tool 6 rechaza si falta `confirmation_proof` o si el hash no coincide; la tool 9 solo en `PENDING_APPROVAL`; ambas fuera de `LLM_BOUND_TOOLS`.
+- [x] Trayectorias del grafo con LLM falso (cada una un test): **feliz** (pide → razón → elegible → interrupt → confirm → solicitud `CHAT` creada), **inelegible** (explica con cita, 0 escrituras), **cancela en el HITL** (0 escrituras), **edita la razón** (vuelve a recolectar), **interrupt vencido** (tarjeta nueva), **falta razón** (no llega a confirmación), **injection** dentro de `reason_text` (no cambia monto/método/compra; la confirmación muestra el payload real).
+- [x] Idempotencia: reintentar el nodo `create_refund` tras un fallo no duplica (misma `Idempotency-Key`).
+- [x] Endpoints `resume`/`pending-interrupt`, evento SSE `interrupt`, 409s.
+- [x] Reanudación tras reinicio del proceso: crear interrupt, reiniciar app (nuevo grafo/checkpointer), `resume` funciona.
+- [x] Verificar que la solicitud creada por el agente aparece en la cola del supervisor con `channel=CHAT`.
 
 ## Criterios de aceptación
 - Es imposible crear una solicitud sin pasar por `interrupt()` y `confirm` (test por trayectoria y test de que `create_refund` no es alcanzable desde otra arista).

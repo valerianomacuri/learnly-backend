@@ -13,13 +13,16 @@ from langchain_core.runnables import RunnableConfig
 from app.core.permissions import Perm
 from app.core.security import Principal
 
-# Subset of the customer's permissions: no create/cancel (spec 10, behind HITL).
+# Subset of the customer's permissions. Create/cancel are only exercised by the
+# deterministic nodes behind HITL (spec 10); no model is bound to those tools.
 AGENT_PERMISSIONS: frozenset[Perm] = frozenset(
     {
         Perm.PURCHASE_READ_OWN,
         Perm.REFUND_READ_OWN,
         Perm.POLICY_READ,
         Perm.REFUND_SIMULATE,
+        Perm.REFUND_CREATE,
+        Perm.REFUND_CANCEL_OWN,
     }
 )
 

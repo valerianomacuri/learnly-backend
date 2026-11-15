@@ -114,19 +114,6 @@ async def test_classifier_failing_twice_falls_back_to_keywords(
     assert "30" in final["content"] and final["citations"]
 
 
-async def test_refund_request_points_to_the_form(
-    session_maker: Maker, make_user: MakeUser
-) -> None:
-    ann = await make_user()
-    runtime = make_runtime(session_maker, scripted_llm(Intent.REFUND_REQUEST))
-    thread = await new_thread(session_maker, ann.id)
-
-    final = final_of(await converse(runtime, ann.id, thread, "Quiero un reembolso"))
-
-    assert "formulario" in final["content"]
-    assert await thread_status(session_maker, thread) == ThreadStatus.ACTIVE
-
-
 async def test_refund_status_lists_only_own_refunds_without_notes(
     session_maker: Maker,
     make_user: MakeUser,

@@ -63,7 +63,9 @@ def route_intent(state: SupportState) -> str:
             return "policy_qa"
         case Intent.REFUND_STATUS:
             return "refund_status"
-        case Intent.REFUND_REQUEST | Intent.CANCEL_REFUND:
-            return "refund_form_notice"
+        case Intent.REFUND_REQUEST:
+            return "collect_refund_info"
+        case Intent.CANCEL_REFUND:
+            return "cancel_refund_flow"
         case _:  # out_of_scope, human_handoff or unknown
             return "handoff"

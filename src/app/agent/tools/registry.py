@@ -4,7 +4,14 @@ There is no tool to approve, pay, read internal notes or take `customer_id`/`rol
 as an argument; `tests/agent/test_tool_registry.py` enforces it.
 """
 
-from app.agent.tools import eligibility, escalate, policy, purchases, refunds
+from app.agent.tools import (
+    eligibility,
+    escalate,
+    policy,
+    purchases,
+    refunds,
+    refunds_write,
+)
 from app.agent.tools.base import ToolSpec
 
 ALL_TOOLS: dict[str, ToolSpec] = {
@@ -15,14 +22,17 @@ ALL_TOOLS: dict[str, ToolSpec] = {
         purchases.DETAILS_SPEC,
         eligibility.ELIGIBILITY_SPEC,
         eligibility.PREPARE_SPEC,
+        refunds_write.CREATE_SPEC,
         refunds.LIST_SPEC,
         refunds.STATUS_SPEC,
+        refunds_write.CANCEL_SPEC,
         escalate.SPEC,
     )
 }
 
-# Read tools the `refund_status` ReAct sub-agent may call. Spec 10 extends other
-# nodes with 4 and 5; the write tools (6, 9) are never bound to a model.
+# Read tools the `refund_status` ReAct sub-agent may call. Tools 4/5 (eligibility,
+# confirmation) and the write tools 6/9 are invoked by deterministic nodes only and
+# are never bound to a model.
 LLM_BOUND_TOOLS: tuple[str, ...] = (
     "list_my_purchases",
     "get_purchase_details",

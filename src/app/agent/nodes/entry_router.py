@@ -10,6 +10,6 @@ async def entry_router(state: SupportState) -> dict[str, Any]:
 
 
 def route_entry(state: SupportState) -> str:
-    # Spec 10 sends `awaiting` turns to `collect_refund_info`; until then the
-    # stub reclassifies the message.
-    return "classify_intent" if state.get("awaiting") else "guard_input"
+    # Every turn passes `guard_input` (length limit, PII masking), even when it
+    # answers a question of the refund flow (`awaiting`).
+    return "guard_input"

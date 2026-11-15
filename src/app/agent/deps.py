@@ -2,7 +2,8 @@
 
 import asyncio
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Any, TypeVar
 
 from langchain_core.language_models import BaseChatModel
@@ -22,6 +23,7 @@ class AgentDeps:
     llm: BaseChatModel
     retriever_factory: Callable[[AsyncSession], PolicyRetriever]
     llm_timeout_s: float = 30.0
+    clock: Callable[[], datetime] = field(default=lambda: datetime.now(UTC))
 
     def tool_context(self, config: RunnableConfig) -> ToolContext:
         return ToolContext(

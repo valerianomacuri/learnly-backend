@@ -266,7 +266,12 @@ class RefundService:
         return RefundRead.model_validate(existing)
 
     async def cancel(
-        self, principal: Principal, refund_id: uuid.UUID, *, if_match: int
+        self,
+        principal: Principal,
+        refund_id: uuid.UUID,
+        *,
+        if_match: int,
+        actor: ActorType = ActorType.CUSTOMER,
     ) -> RefundRead:
         """BR-24: only the owner, only while PENDING_APPROVAL, optimistic lock."""
         require_permission(principal, Perm.REFUND_CANCEL_OWN)
@@ -277,16 +282,14 @@ class RefundService:
             raise NotFoundError("Refund")
         if refund.version != if_match:
             raise VersionConflict
-        refund.status = transition(
-            refund.status, RefundStatus.CANCELLED, ActorType.CUSTOMER
-        )
+        refund.status = transition(refund.status, RefundStatus.CANCELLED, actor)
         refund.version += 1
         refund.updated_at = self.clock()
         await self.session.flush()
         await self.events.append(
             refund.id,
             EVENT_CANCELLED,
-            EventActor(ActorType.CUSTOMER, principal.user_id),
+            EventActor(actor, principal.user_id),
         )
         return RefundRead.model_validate(refund)
 

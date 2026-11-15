@@ -16,7 +16,7 @@ Fuente: [`../challenge.md`](../challenge.md). Se implementa **un spec por sesió
 | 07 | [RAG: ingesta, recuperación, respuesta](07-rag.md) | ✅ | |
 | 08 | [Evals del RAG y ablación](08-rag-evals.md) | ⬜ | |
 | 09 | [Agente: tools y grafo de lectura](09-agente-lectura.md) | ⬜ | |
-| 10 | [Agente: flujo de reembolso con HITL](10-agente-hitl.md) | ⬜ | |
+| 10 | [Agente: flujo de reembolso con HITL](10-agente-hitl.md) | ✅ | |
 | 11 | [Frontend del chat](11-frontend-chat.md) | ⬜ | **Flujo completo con chat** |
 | 12 | [Seguridad, límites y resiliencia](12-seguridad-resiliencia.md) | ⬜ | |
 | 13 | [Observabilidad, evals del agente, CI y docs](13-observabilidad-ci-docs.md) | ⬜ | **Entregable final** |

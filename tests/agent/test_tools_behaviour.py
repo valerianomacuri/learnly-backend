@@ -36,6 +36,8 @@ def test_agent_permissions_are_a_subset_of_the_customer() -> None:
         "refund:read_own",
         "policy:read",
         "refund:simulate",
+        "refund:create",
+        "refund:cancel_own",
     }
 
 

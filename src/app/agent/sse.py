@@ -1,7 +1,7 @@
 """Server-sent events of the chat: wire format and graph-stream translation.
 
-Events: `token`, `tool_call`, `tool_result`, `final`, `error` (spec 10 adds
-`interrupt`). Each frame is `id:` (incremental per stream) + `event:` + `data:` JSON.
+Events: `token`, `tool_call`, `tool_result`, `interrupt`, `final`, `error`.
+Each frame is `id:` (incremental per stream) + `event:` + `data:` JSON.
 """
 
 import json
@@ -11,7 +11,7 @@ from typing import Any
 
 logger = logging.getLogger("app.agent.sse")
 
-EVENT_TYPES = ("token", "tool_call", "tool_result", "final", "error")
+EVENT_TYPES = ("token", "tool_call", "tool_result", "interrupt", "final", "error")
 _CUSTOM_EVENTS = {"token", "tool_call", "tool_result"}
 
 
@@ -45,6 +45,11 @@ async def translate(
                 data = {k: v for k, v in payload.items() if k != "type"}
                 yield payload["type"], data
             elif mode == "updates":
+                pending = payload.get("__interrupt__")
+                if pending:
+                    # The graph stopped for the human: the card is the interrupt value.
+                    yield "interrupt", dict(pending[0].value)
+                    continue
                 update = payload.get("respond")
                 final = _final(update) if isinstance(update, dict) else None
                 if final is not None:

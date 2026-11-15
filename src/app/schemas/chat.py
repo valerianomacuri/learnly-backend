@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -24,7 +24,19 @@ class MessageCreate(BaseModel):
     content: str = Field(min_length=1, max_length=MAX_MESSAGE_CHARS)
 
 
+class ResumeRequest(BaseModel):
+    """The customer's answer to the confirmation card (HITL)."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    interrupt_id: str = Field(min_length=1, max_length=64)
+    decision: Literal["confirm", "cancel", "edit"]
+    edited_reason: str | None = Field(default=None, max_length=2000)
+
+
 class ChatMessageRead(BaseModel):
     role: Literal["user", "assistant"]
     content: str
     citations: list[dict[str, str]] = []
+    # Set only on the trailing entry that carries the pending confirmation card.
+    interrupt: dict[str, Any] | None = None

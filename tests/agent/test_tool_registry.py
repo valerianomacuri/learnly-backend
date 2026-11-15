@@ -28,8 +28,16 @@ def test_bound_tools_are_known_and_read_only() -> None:
 def test_registry_has_no_approval_payment_or_notes_tools() -> None:
     for name in ALL_TOOLS:
         assert not any(word in name for word in FORBIDDEN_TOOL_WORDS), name
-    assert "create_refund_request" not in ALL_TOOLS
-    assert "cancel_refund_request" not in ALL_TOOLS
+
+
+def test_write_tools_exist_but_are_never_bound_to_a_model() -> None:
+    for name in ("create_refund_request", "cancel_refund_request"):
+        assert name in ALL_TOOLS
+        assert name not in LLM_BOUND_TOOLS
+        assert name not in {s.name for s in bound_specs()}
+    # Tools 4 and 5 are also for deterministic nodes only.
+    assert "check_refund_eligibility" not in LLM_BOUND_TOOLS
+    assert "prepare_refund_confirmation" not in LLM_BOUND_TOOLS
 
 
 def test_argument_schemas_forbid_extra_fields() -> None:

@@ -28,6 +28,7 @@ def _summary(refund: Any) -> dict[str, Any]:
         "id": refund.id,
         "purchase_id": refund.purchase_id,
         "status": refund.status,
+        "version": refund.version,
         "reason_category": refund.reason_category,
         "refund_method": refund.refund_method,
         "amount": refund.amount,
