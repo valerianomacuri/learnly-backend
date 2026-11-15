@@ -4,6 +4,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -35,6 +36,19 @@ def create_app() -> FastAPI:
     logging.basicConfig(level=settings.log_level)
 
     app = FastAPI(title=settings.app_name, lifespan=lifespan)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_origins,
+        allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=[
+            "Authorization",
+            "Content-Type",
+            "Idempotency-Key",
+            "If-Match",
+            TRACE_HEADER,
+        ],
+        expose_headers=[TRACE_HEADER, "ETag"],
+    )
 
     @app.middleware("http")
     async def trace_id_middleware(

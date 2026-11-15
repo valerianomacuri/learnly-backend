@@ -60,6 +60,8 @@ async def _activate(session: AsyncSession, file: PolicyDocumentFile) -> None:
                 version=meta.version,
                 effective_date=meta.effective_date,
                 checksum=file.checksum,
+                title=meta.title,
+                content=file.content,
                 status=PolicyStatus.ACTIVE,
                 params=file.stored_params,
             )
@@ -75,6 +77,8 @@ async def _activate(session: AsyncSession, file: PolicyDocumentFile) -> None:
             )
         target.effective_date = meta.effective_date
         target.checksum = file.checksum
+        target.title = meta.title
+        target.content = file.content
         target.params = file.stored_params
         target.status = PolicyStatus.ACTIVE
     await session.flush()
@@ -100,6 +104,9 @@ async def load_policies(session: AsyncSession, directory: Path) -> LoadReport:
     for file in files:
         current = active.get(file.meta.doc_key)
         if current is not None and current.checksum == file.checksum:
+            if current.content is None:  # rows loaded before the viewer existed
+                current.title = file.meta.title
+                current.content = file.content
             unchanged.append(file.meta.doc_key)
             continue
         await _activate(session, file)

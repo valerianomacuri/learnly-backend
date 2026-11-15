@@ -4,8 +4,10 @@ from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, Query, status
+from fastapi.responses import StreamingResponse
 
 from app.api.deps import SupervisorRefundServiceDep, requires
+from app.core.config import get_settings
 from app.core.permissions import Perm
 from app.core.security import Principal
 from app.domain.enums import Channel, QueueSort, ReasonCategory, RefundStatus, SortOrder
@@ -20,11 +22,17 @@ from app.schemas.supervisor import (
     SupervisorStats,
 )
 from app.services.errors import IfMatchRequired, InvalidIfMatch
+from app.services.refund_stream import refund_event_stream
 from app.services.supervisor_refund_service import QueueFilters
 
 router = APIRouter(prefix="/supervisor", tags=["supervisor"])
 
 ReaderDep = Annotated[Principal, Depends(requires(Perm.REFUND_READ_ANY))]
+# `scope="function"` closes the request session before the stream starts, so a
+# long-lived SSE connection does not hold a pooled DB connection.
+StreamReaderDep = Annotated[
+    Principal, Depends(requires(Perm.REFUND_READ_ANY), scope="function")
+]
 DeciderDep = Annotated[Principal, Depends(requires(Perm.REFUND_DECIDE))]
 PayoutRetrierDep = Annotated[Principal, Depends(requires(Perm.REFUND_RETRY_PAYOUT))]
 NoteWriterDep = Annotated[Principal, Depends(requires(Perm.NOTE_WRITE))]
@@ -41,6 +49,22 @@ def parse_if_match(if_match: str | None) -> int:
     if not raw.isdigit():
         raise InvalidIfMatch
     return int(raw)
+
+
+@router.get("/refunds/stream", response_class=StreamingResponse)
+async def refund_stream(_: StreamReaderDep) -> StreamingResponse:
+    """SSE: `refund.created|updated` with `{id, status, version}` (heartbeat 15 s).
+
+    Bearer auth, so clients use `fetch` + `ReadableStream`, not `EventSource`.
+    """
+    settings = get_settings()
+    return StreamingResponse(
+        refund_event_stream(
+            settings.database_url, heartbeat_seconds=settings.sse_heartbeat_seconds
+        ),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.get("/refunds", response_model=SupervisorRefundPage)

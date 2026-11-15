@@ -1,9 +1,9 @@
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal, Self
+from typing import Annotated, Literal, Self
 
 from pydantic import Field, SecretStr, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 REQUIRED_DRIVER_PREFIX = "postgresql+psycopg://"
 
@@ -39,8 +39,21 @@ class Settings(BaseSettings):
     payout_backoff_base_seconds: float = Field(default=30.0, ge=0)
     payout_poll_seconds: float = Field(default=2.0, gt=0)
 
+    # Browser origins allowed by CORS (comma-separated in `CORS_ORIGINS`)
+    cors_origins: Annotated[list[str], NoDecode] = ["http://localhost:5173"]
+
+    # Seconds between SSE heartbeats on the supervisor stream
+    sse_heartbeat_seconds: float = Field(default=15.0, gt=0)
+
     # Directory with the policy .md files (default: `policies/` at the repo root)
     policies_dir: Path | None = None
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def _split_origins(cls, value: object) -> object:
+        if isinstance(value, str):
+            return [o.strip() for o in value.split(",") if o.strip()]
+        return value
 
     @model_validator(mode="after")
     def _derive_confirmation_secret(self) -> Self:

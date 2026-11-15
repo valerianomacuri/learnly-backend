@@ -28,6 +28,9 @@ class PolicyDocument(IdMixin, TimestampMixin, Base):
     version: Mapped[str] = mapped_column(String(50))
     effective_date: Mapped[date] = mapped_column(Date)
     checksum: Mapped[str] = mapped_column(Text)
+    # Display copy for the policy viewer (no LLM); NULL until `policies-load` runs.
+    title: Mapped[str | None] = mapped_column(String(200), default=None)
+    content: Mapped[str | None] = mapped_column(Text, default=None)
     status: Mapped[PolicyStatus] = mapped_column(
         str_enum(PolicyStatus, "policy_status"), default=PolicyStatus.ACTIVE
     )

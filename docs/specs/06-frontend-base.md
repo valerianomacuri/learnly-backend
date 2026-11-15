@@ -25,13 +25,13 @@ Interfaz completa para el camino sin LLM: el customer solicita un reembolso por 
 - **Dashboard**: tabla con filtros (estado, SLA vencido, riesgo, canal, razón, fechas, búsqueda), SLA resaltado, orden y cursor; panel de detalle con `eligibility_snapshot`, compra, progreso, historial del cliente, flags, notas internas; modales aprobar (nota opcional) / rechazar (nota ≥10, validada en cliente y servidor); envía `If-Match`; en **409** muestra "otro supervisor ya decidió" y recarga el detalle; estado vivo por SSE (invalida queries). Botón "Reintentar pago" si `FAILED`.
 
 ## Tareas
-- [ ] Instalar y configurar Tailwind, router, query, tipos OpenAPI.
-- [ ] Endpoints de políticas y SSE + tests (`tests/test_policies_api.py`, `test_supervisor_stream.py`).
-- [ ] Auth y guardas de rol (customer no ve `/supervisor`; supervisor no ve chat/formulario).
-- [ ] Formulario + modal + mis solicitudes (con timeline público).
-- [ ] Dashboard + detalle + modales + 409 + SSE.
-- [ ] Tests de frontend con Vitest + Testing Library para formulario (validación de razón, token) y modal de rechazo; (Playwright E2E opcional, queda para 13).
-- [ ] Script `docs/demo-sin-llm.md` actualizado con el recorrido en UI.
+- [x] Instalar y configurar Tailwind, router, query, tipos OpenAPI.
+- [x] Endpoints de políticas y SSE + tests (`tests/test_policies_api.py`, `test_supervisor_stream.py`).
+- [x] Auth y guardas de rol (customer no ve `/supervisor`; supervisor no ve chat/formulario).
+- [x] Formulario + modal + mis solicitudes (con timeline público).
+- [x] Dashboard + detalle + modales + 409 + SSE.
+- [x] Tests de frontend con Vitest + Testing Library para formulario (validación de razón, token) y modal de rechazo; (Playwright E2E opcional, queda para 13).
+- [x] Script `docs/demo-sin-llm.md` actualizado con el recorrido en UI.
 
 ## Criterios de aceptación
 - Recorrido manual: customer crea solicitud → aparece en vivo en el dashboard → supervisor aprueba → worker → customer ve `COMPLETED`.

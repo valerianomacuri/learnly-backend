@@ -41,3 +41,31 @@ Fallos: con `FAIL_RATE=1 uv run payouts-worker --once` el reembolso pasa a `PROC
 y se reintenta con backoff (`PAYOUT_BACKOFF_BASE_SECONDS`); agotados los intentos queda
 `FAILED` y un supervisor lo reintenta con
 `POST /supervisor/refunds/$RID/retry-payout` (202) seguido de otra pasada del worker.
+
+## Recorrido en la UI (spec 06)
+
+Mismo flujo, sin `curl`. Requiere backend, worker y frontend:
+
+```bash
+uv run uvicorn app.main:app --app-dir src --loop asyncio:SelectorEventLoop   # :8000
+uv run payouts-worker                                                      # proceso aparte
+(cd ../learnly-frontend && npm i && npm run dev)                           # http://localhost:5173
+```
+
+Contraseña de todos los usuarios semilla: `seed-password-1`.
+
+1. **Customer** (`ann@example.com`): `/purchases` muestra los días restantes de cada compra →
+   "Solicitar reembolso" → categoría + razón (20–1000 caracteres) → **Ver elegibilidad**.
+   Si es inelegible se listan los motivos traducidos y las citas; si es elegible se abre el modal
+   de confirmación (monto, método, razón, fecha límite) → **Confirmar solicitud**. La
+   `Idempotency-Key` se genera al abrir el modal y se reutiliza en los reintentos.
+2. **Supervisor** (`sup1@support.example`, otra ventana): `/supervisor` muestra la solicitud al
+   instante (indicador "En vivo", SSE por `fetch` con Bearer). Abre el detalle, revisa
+   elegibilidad, compra e historial, y **Aprobar** (nota opcional) o **Rechazar** (nota ≥ 10).
+3. Con el worker en marcha, en `/refunds` del customer el estado pasa a `COMPLETED`
+   (se refresca solo mientras haya solicitudes en curso). El seguimiento público se ve en
+   "Ver seguimiento".
+4. **Conflicto**: abre el mismo detalle en dos pestañas de supervisor; la segunda en decidir ve
+   "Otro supervisor ya decidió esta solicitud" y el detalle se recarga.
+5. **Pago fallido**: con `FAIL_RATE=1` el detalle muestra *Reintentar pago* cuando queda `FAILED`.
+6. `/policies` (ambos roles): visor de las políticas ACTIVE con su versión y fecha.

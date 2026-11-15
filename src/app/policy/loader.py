@@ -44,6 +44,7 @@ class PolicyDocumentFile:
     path: Path
     meta: PolicyDocumentMeta
     checksum: str
+    content: str = ""  # Markdown body, front-matter removed
 
     @property
     def stored_params(self) -> dict[str, Any]:
@@ -68,7 +69,8 @@ def parse_policy_file(path: Path) -> PolicyDocumentFile:
         raise PolicyConfigError(f"{path.name}: invalid YAML: {exc}") from exc
     except ValidationError as exc:
         raise PolicyConfigError(f"{path.name}: invalid front-matter: {exc}") from exc
-    return PolicyDocumentFile(path, meta, hashlib.sha256(raw).hexdigest())
+    body = raw.decode("utf-8")[match.end() :].strip()
+    return PolicyDocumentFile(path, meta, hashlib.sha256(raw).hexdigest(), body)
 
 
 def load_policy_directory(directory: Path) -> list[PolicyDocumentFile]:
