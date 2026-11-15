@@ -18,11 +18,11 @@ Widget de chat para el customer con respuestas en streaming y tarjeta de confirm
 - Tipos de eventos SSE con `zod` discriminado por `event`.
 
 ## Tareas
-- [ ] Parser SSE con tests (chunks partidos a mitad de línea, `data` multilínea, `error`).
-- [ ] `ChatPage`, `MessageList`, `Composer`, `ConfirmationCard` + tests de componente (botones, expiración, edición, 409).
-- [ ] Recuperación tras recarga (test con MSW simulando `pending-interrupt`).
-- [ ] Navegación: customer ve "Chat" y "Nuevo reembolso"; supervisor no ve el chat (guardas de ruta ya existen).
-- [ ] Recorrido E2E manual documentado en `docs/demo.md`; Playwright opcional contra el backend con LLM falso (flag `LLM_PROVIDER=fake` solo en entorno de test).
+- [x] Parser SSE con tests (chunks partidos a mitad de línea, `data` multilínea, `error`).
+- [x] `ChatPage`, `MessageList`, `Composer`, `ConfirmationCard` + tests de componente (botones, expiración, edición, 409).
+- [x] Recuperación tras recarga (test con MSW simulando `pending-interrupt`).
+- [x] Navegación: customer ve "Chat" y "Nuevo reembolso"; supervisor no ve el chat (guardas de ruta ya existen).
+- [x] Recorrido E2E manual documentado en `docs/demo.md` (Playwright opcional: no implementado).
 
 ## Criterios de aceptación
 - Chat → "quiero un reembolso de <curso>" → pregunta de razón → tarjeta → Confirmar → mensaje de éxito → la solicitud aparece en vivo en el dashboard del supervisor con canal `CHAT`.
