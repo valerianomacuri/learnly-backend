@@ -14,7 +14,11 @@ Cerrar el challenge: trazabilidad de punta a punta, métricas de negocio, evals 
 ### Observabilidad
 - **Logs JSON** (`core/logging.py`) con `trace_id`, `user_id` (id, nunca email) y filtro de PII (12). `trace_id` propagado API → servicio → grafo (`config["configurable"]["request_id"]`) → worker (guardado en `outbox_events.payload`) → `refund_events.payload`.
 - **OpenTelemetry** en API (FastAPI + SQLAlchemy instrumentation) y worker; exportador OTLP configurable (apagado por defecto).
-- **Trazas del grafo por nodo** con Langfuse (o LangSmith, elegir uno vía `TRACING_PROVIDER`): callback de LangChain por run, con tokens y costo; metadatos `refund_id`, `thread_id`, `node`, `tool`. Criterio: dado un `refund_id`, se reconstruye conversación → nodo → tool → decisión (`refund_events.payload.trace_id` ↔ traza).
+- **Trazas del grafo por nodo** con **LangSmith** (`TRACING_PROVIDER=none|langsmith`, por defecto `none`: sin clave no hay llamadas de red; tests y CI siempre en `none`). Aditivo: un `LangChainTracer` explícito se adjunta en `AgentRuntime._run` junto a `UsageCallback`; no se usa el modo global `LANGSMITH_TRACING` (trazaría RAG/evals y filtraría PII) y no se modifican nodos, tools ni grafo.
+  - Privacidad (12): el cliente se crea con `hide_inputs`/`hide_outputs` que aplican `mask_pii` y eliminan token de confirmación, hash y notas internas.
+  - Metadatos: `request_id` (= `refund_events.payload.trace_id`), `thread_id`, `user_id` (id, nunca email) y `refund_id` (best-effort en `create_refund`); nodo y tool salen como spans; tokens y costo los calcula LangSmith desde `usage_metadata`.
+  - Fail-open: un fallo del tracer se loguea y nunca rompe la petición.
+  - Criterio: dado un `refund_id`, se reconstruye conversación → nodo → tool → decisión (`refund_events.payload.trace_id` ↔ traza, filtro `metadata.request_id`).
 - **`/healthz`** (liveness), **`/readyz`** (DB, Redis, vector store con timeout corto; 503 si falla), **`/metrics`** Prometheus (interno, protegido por token de servicio o red interna).
 - **Métricas de negocio** (`prometheus-client`): solicitudes por canal, rechazos de elegibilidad por `reason_code`, tasa de confirmación en el HITL, tasa de aprobación, tiempo hasta decisión (histograma), SLA vencidos (gauge), outbox pendiente/DEAD, latencia/costo del LLM. Reglas de alerta de ejemplo (`ops/alerts.yml`): SLA vencidos > umbral, DEAD > 0. Dashboard Grafana JSON opcional.
 
@@ -25,16 +29,16 @@ Cerrar el challenge: trazabilidad de punta a punta, métricas de negocio, evals 
 Jobs: `lint` (ruff, mypy strict), `unit`, `api` (servicio Postgres+pgvector y Redis), `graph` (LLM falso), `rag-evals --offline`, `agent-evals --fake`, `alembic upgrade head` + `alembic check`, frontend (`lint`, `test`, `build`). Cobertura ≥ 85 % en `domain/`. `pre-commit` (ruff, ruff-format, mypy) documentado. CI en verde bloquea el merge (branch protection documentada).
 
 ### Compose y DX
-`docker-compose.yml`: `db` (pgvector), `redis`, `api`, `worker`, `frontend` (build estático servido por nginx o `vite preview`), `langfuse` (+ su Postgres) en perfil `observability`; job de inicio `migrate` → `policies-load/rag-ingest` → `seed`. `docker compose up` desde cero deja todo con datos semilla. `Makefile`: `up`, `down`, `test`, `evals`, `demo`.
+`docker-compose.yml`: `db` (pgvector), `redis`, `api`, `worker`, `frontend` (build estático servido por nginx o `vite preview`), perfil `observability` opcional para OTel collector/Prometheus/Grafana (LangSmith es SaaS o self-host aparte; variables opcionales `TRACING_PROVIDER`, `LANGSMITH_API_KEY`, `LANGSMITH_PROJECT`, `LANGSMITH_ENDPOINT` en `.env.example`/README); job de inicio `migrate` → `policies-load/rag-ingest` → `seed`. `docker compose up` desde cero deja todo con datos semilla. `Makefile`: `up`, `down`, `test`, `evals`, `demo`.
 
 ### Documentación
-- `docs/adr/` con **5 ADRs mínimos** (contexto, decisión, alternativas, consecuencias): `0001-elegibilidad-determinista`, `0002-tools-de-escritura-fuera-del-llm`, `0003-idempotencia-y-outbox`, `0004-estrategia-de-chunking` (con los números de la ablación del 08), `0005-versionado-de-politicas`. Opcionales: `0006-refund-events-unica-auditoria`, `0007-vite-en-lugar-de-nextjs`.
+- `docs/adr/` con **5 ADRs mínimos** (contexto, decisión, alternativas, consecuencias): `0001-elegibilidad-determinista`, `0002-tools-de-escritura-fuera-del-llm`, `0003-idempotencia-y-outbox`, `0004-estrategia-de-chunking` (con los números de la ablación del 08), `0005-versionado-de-politicas`. Opcionales: `0006-refund-events-unica-auditoria`, `0007-vite-en-lugar-de-nextjs`, `0008-langsmith-para-trazas` (alternativas: Langfuse, solo OTel; consecuencia: los datos salen a un SaaS → opt-in + scrub de PII).
 - `README.md` raíz del proyecto con diagrama de arquitectura (Mermaid), `docker compose up`, variables de entorno, tabla de comandos y **guía de demo de 3 minutos** (`docs/demo.md`): chat → tarjeta → confirmar → supervisor aprueba → worker → completado; luego el caso inelegible y el 409 con dos supervisores.
 - Revisión final: matriz de trazabilidad del índice (cada fila cubierta), rúbrica del §10 autoevaluada en `docs/rubrica.md`.
 
 ## Tareas
 - [ ] Logging JSON + `trace_id` extremo a extremo + test (misma id en logs, evento y traza simulada).
-- [ ] OTel y exportador; Langfuse con callback; test de que los prompts/trazas no contienen emails ni notas internas (reusar el test del 12 sobre el callback).
+- [ ] OTel y exportador; LangSmith tracer (opt-in, fail-open); tests: los runs capturados no contienen emails, tokens ni notas internas (reusar el test del 12), un tracer que falla no afecta la respuesta y con `TRACING_PROVIDER=none` el comportamiento no cambia.
 - [ ] `/readyz` con dependencias y tests (cada dependencia caída → 503 con detalle).
 - [ ] Métricas de negocio + tests de que los contadores se incrementan en los flujos clave.
 - [ ] 30 guiones del agente + runner + umbrales en `evals/thresholds.toml`.
@@ -45,6 +49,7 @@ Jobs: `lint` (ruff, mypy strict), `unit`, `api` (servicio Postgres+pgvector y Re
 - `docker compose up` desde un clon limpio levanta todo con datos semilla; el guion de demo se completa en ≤ 3 min.
 - `make test` y `make evals` verdes; CI verde con los umbrales (Recall@5 ≥ 0,90; intención ≥ 95 %; 0 tools no autorizadas; cobertura dominio ≥ 85 %).
 - Dado un `refund_id`, se llega a la traza del run que lo creó.
+- Con `TRACING_PROVIDER=none` (default) la suite existente (specs 01-12) pasa sin modificaciones.
 - 5 ADRs completos y README con diagrama.
 
 ## Verificación
