@@ -12,6 +12,7 @@ from app.agent.sse import to_sse
 from app.api.deps import SessionDep, rate_limit, requires
 from app.api.problems import PROBLEM_MEDIA_TYPE
 from app.core.config import get_settings
+from app.core.metrics import CONFIRMATIONS
 from app.core.permissions import Perm
 from app.core.redis import ThreadLock
 from app.core.security import Principal
@@ -180,6 +181,7 @@ async def resume(
     lock = ThreadLock(getattr(request.app.state, "redis", None), thread_id)
     if not await lock.acquire():
         raise RunInProgress()
+    CONFIRMATIONS.labels(decision=body.decision).inc()
     return StreamingResponse(
         _locked(lock, to_sse(runtime.resume(config, body.model_dump()))),
         media_type="text/event-stream",

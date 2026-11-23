@@ -1,0 +1,24 @@
+# Example alert rules (spec 13), loaded by ops/prometheus.yml.
+groups:
+  - name: learnly-refunds
+    rules:
+      - alert: RefundSlaBreached
+        expr: refund_sla_breached > 3
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $value }} pending refunds are past their review SLA"
+      - alert: PayoutDeadLetter
+        expr: refund_outbox_dead > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $value }} payout(s) were dead-lettered; retry them from the supervisor dashboard"
+      - alert: LlmCostSpike
+        expr: increase(refund_llm_cost_usd_total[1h]) > 5
+        labels:
+          severity: warning
+        annotations:
+          summary: "Estimated LLM spend above 5 USD in the last hour"

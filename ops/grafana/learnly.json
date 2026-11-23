@@ -1,0 +1,67 @@
+{
+  "title": "Learnly refunds",
+  "uid": "learnly-refunds",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "panels": [
+    {
+      "id": 1, "type": "timeseries", "title": "Solicitudes por canal (por hora)",
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "legendFormat": "{{channel}}", "expr": "sum by (channel) (increase(refund_requests_total[1h]))" }]
+    },
+    {
+      "id": 2, "type": "timeseries", "title": "Rechazos de elegibilidad por motivo",
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "legendFormat": "{{reason_code}}", "expr": "sum by (reason_code) (increase(refund_eligibility_rejections_total[1h]))" }]
+    },
+    {
+      "id": 3, "type": "timeseries", "title": "Confirmaciones HITL",
+      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "legendFormat": "{{decision}}", "expr": "sum by (decision) (increase(refund_confirmations_total[1h]))" }]
+    },
+    {
+      "id": 4, "type": "timeseries", "title": "Decisiones del supervisor",
+      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "legendFormat": "{{decision}}", "expr": "sum by (decision) (increase(refund_decisions_total[1h]))" }]
+    },
+    {
+      "id": 5, "type": "timeseries", "title": "Tiempo hasta decisión (p95, s)",
+      "gridPos": { "x": 0, "y": 16, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "histogram_quantile(0.95, sum by (le) (rate(refund_time_to_decision_seconds_bucket[1h])))" }]
+    },
+    {
+      "id": 6, "type": "stat", "title": "SLA vencidos",
+      "gridPos": { "x": 12, "y": 16, "w": 6, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "refund_sla_breached" }]
+    },
+    {
+      "id": 7, "type": "stat", "title": "Outbox pendiente / DEAD",
+      "gridPos": { "x": 18, "y": 16, "w": 6, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "refId": "A", "legendFormat": "pendiente", "expr": "refund_outbox_pending" },
+        { "refId": "B", "legendFormat": "dead", "expr": "refund_outbox_dead" }
+      ]
+    },
+    {
+      "id": 8, "type": "timeseries", "title": "Latencia del agente (p95, s)",
+      "gridPos": { "x": 0, "y": 24, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "histogram_quantile(0.95, sum by (le) (rate(refund_llm_latency_seconds_bucket[5m])))" }]
+    },
+    {
+      "id": 9, "type": "timeseries", "title": "Costo LLM estimado (USD/h)",
+      "gridPos": { "x": 12, "y": 24, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "refId": "A", "expr": "increase(refund_llm_cost_usd_total[1h])" }]
+    }
+  ]
+}

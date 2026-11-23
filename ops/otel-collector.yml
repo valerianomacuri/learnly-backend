@@ -1,0 +1,18 @@
+# Receives the API's and worker's OTLP/HTTP traces and prints them. Swap the
+# `debug` exporter for Tempo/Jaeger/your backend in a real deployment.
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+processors:
+  batch: {}
+exporters:
+  debug:
+    verbosity: basic
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [debug]

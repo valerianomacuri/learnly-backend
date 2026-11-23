@@ -1,3 +1,24 @@
+# `docker compose up` from a clean clone: db + redis, then `init` (migrate ->
+# policies -> RAG ingest -> seed) and only then api, worker and frontend.
+#   - frontend builds from ../learnly-frontend (sibling repo). Backend only:
+#       docker compose up db redis init api worker
+#   - metrics stack:  docker compose --profile observability up
+x-app-env: &app-env
+  ENVIRONMENT: ${ENVIRONMENT:-development}
+  DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-customer_support}
+  REDIS_URL: redis://redis:6379/0
+  JWT_SECRET: ${JWT_SECRET:-dev-compose-secret-do-not-use-in-production-0123456789}
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  OTEL_ENABLED: ${OTEL_ENABLED:-false}
+  OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4318}
+  TRACING_PROVIDER: ${TRACING_PROVIDER:-none}
+  LANGSMITH_API_KEY: ${LANGSMITH_API_KEY:-}
+  LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-learnly-refunds}
+  LANGSMITH_ENDPOINT: ${LANGSMITH_ENDPOINT:-}
+  METRICS_TOKEN: ${METRICS_TOKEN:-}
+
 services:
   db:
     image: pgvector/pgvector:pg17
@@ -28,34 +49,103 @@ services:
       timeout: 3s
       retries: 10
 
-  api:
-    profiles: ["production"]
+  # One-shot startup job. Idempotent: safe to re-run on every `up`.
+  init:
     build: .
-    restart: unless-stopped
-    env_file: .env
-    environment:
-      ENVIRONMENT: production
-      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-customer_support}
-      REDIS_URL: redis://redis:6379/0
+    image: learnly-backend
+    restart: "no"
+    environment: *app-env
+    command:
+      - sh
+      - -c
+      - |
+        set -e
+        alembic upgrade head
+        policies-load
+        if [ -n "$$OPENAI_API_KEY" ]; then
+          rag-ingest
+        else
+          echo "OPENAI_API_KEY not set: skipping rag-ingest (chat stays off, forms work)"
+        fi
+        seed --no-tokens
     depends_on:
       db:
         condition: service_healthy
       redis:
         condition: service_healthy
+
+  api:
+    image: learnly-backend
+    restart: unless-stopped
+    environment: *app-env
     ports:
       - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/readyz', timeout=3).status == 200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    depends_on:
+      init:
+        condition: service_completed_successfully
 
   worker:
-    profiles: ["dev"]
-    build: .
+    image: learnly-backend
     restart: unless-stopped
-    env_file: .env
-    environment:
-      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-customer_support}
+    environment: *app-env
     command: ["payouts-worker"]
     depends_on:
-      db:
+      init:
+        condition: service_completed_successfully
+
+  frontend:
+    build:
+      context: ../learnly-frontend
+      dockerfile: ../learnly-backend/docker/frontend.Dockerfile
+      additional_contexts:
+        docker: ./docker
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:8000/api/v1}
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-5173}:80"
+    depends_on:
+      api:
         condition: service_healthy
+
+  # --- profile `observability`: OTel collector, Prometheus, Grafana ---
+  otel-collector:
+    profiles: ["observability"]
+    image: otel/opentelemetry-collector-contrib:0.116.1
+    command: ["--config=/etc/otelcol/config.yml"]
+    volumes:
+      - ./ops/otel-collector.yml:/etc/otelcol/config.yml:ro
+    ports:
+      - "4318:4318"
+
+  prometheus:
+    profiles: ["observability"]
+    image: prom/prometheus:v2.55.1
+    volumes:
+      - ./ops/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./ops/alerts.yml:/etc/prometheus/alerts.yml:ro
+    ports:
+      - "9090:9090"
+
+  grafana:
+    profiles: ["observability"]
+    image: grafana/grafana:11.3.1
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - ./ops/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./ops/grafana/learnly.json:/var/lib/grafana/dashboards/learnly.json:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
 
 volumes:
   pgdata:

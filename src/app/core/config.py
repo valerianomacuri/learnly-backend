@@ -70,6 +70,16 @@ class Settings(BaseSettings):
     breaker_failure_threshold: int = Field(default=5, gt=0)
     breaker_reset_s: float = Field(default=30.0, gt=0)
 
+    # Observability (spec 13). Everything is off by default: no network calls.
+    otel_enabled: bool = False
+    otel_exporter_otlp_endpoint: str = "http://localhost:4318"
+    tracing_provider: Literal["none", "langsmith"] = "none"
+    langsmith_api_key: SecretStr | None = None
+    langsmith_project: str = "learnly-refunds"
+    langsmith_endpoint: str | None = None
+    # Bearer token for /metrics; unset = open (restrict it at the network level).
+    metrics_token: SecretStr | None = None
+
     @field_validator("cors_origins", mode="before")
     @classmethod
     def _split_origins(cls, value: object) -> object:
@@ -81,6 +91,12 @@ class Settings(BaseSettings):
     def _derive_confirmation_secret(self) -> Self:
         if self.confirmation_secret is None:
             self.confirmation_secret = self.jwt_secret
+        return self
+
+    @model_validator(mode="after")
+    def _langsmith_needs_key(self) -> Self:
+        if self.tracing_provider == "langsmith" and self.langsmith_api_key is None:
+            raise ValueError("TRACING_PROVIDER=langsmith requires LANGSMITH_API_KEY")
         return self
 
     @model_validator(mode="after")

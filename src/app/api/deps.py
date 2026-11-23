@@ -7,6 +7,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_session
+from app.core.logging import user_id_var
 from app.core.permissions import Perm
 from app.core.rate_limit import SlidingWindowLimiter
 from app.core.security import InvalidTokenError, Principal, decode_access_token
@@ -49,6 +50,7 @@ async def get_principal(
             "Invalid or expired token",
             headers=_UNAUTHORIZED_HEADERS,
         )
+    user_id_var.set(str(principal.user_id))  # the id, never the email
     return principal
 
 

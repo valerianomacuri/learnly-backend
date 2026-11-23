@@ -1,0 +1,190 @@
+name: CI
+
+# Merge gate: every job must be green (branch protection, see README).
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+env:
+  # Tests and CI never reach the network: no LLM key, tracing off.
+  TRACING_PROVIDER: none
+  OTEL_ENABLED: "false"
+  ENVIRONMENT: test
+  JWT_SECRET: ci-only-secret-0123456789abcdef0123456789
+  DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/customer_support
+  TEST_DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/customer_support_test
+  REDIS_URL: redis://localhost:6379/0
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run mypy
+
+  unit:
+    name: unit (pure domain, no services)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
+      - run: uv run pytest tests/unit -q --cov=app.domain --cov-report=term
+
+  # DB-backed suites need Postgres + pgvector and Redis. `api` runs the whole test
+  # tree (API, security, workers); `graph` re-runs the agent graph on its own so a
+  # regression there is reported as its own check. Domain coverage gates here.
+  api:
+    runs-on: ubuntu-latest
+    services:
+      db:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: customer_support
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s
+          --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s
+          --health-timeout 3s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
+      - name: Create the test database
+        run: |
+          PGPASSWORD=postgres psql -h localhost -U postgres \
+            -c "CREATE DATABASE customer_support_test"
+          PGPASSWORD=postgres psql -h localhost -U postgres -d customer_support_test \
+            -c "CREATE EXTENSION IF NOT EXISTS vector"
+          PGPASSWORD=postgres psql -h localhost -U postgres -d customer_support \
+            -c "CREATE EXTENSION IF NOT EXISTS vector"
+      - run: uv run pytest -q --cov=app.domain --cov-report=term-missing --cov-fail-under=85
+
+  graph:
+    name: graph (fake LLM)
+    runs-on: ubuntu-latest
+    services:
+      db:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: customer_support
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s
+          --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
+      - run: |
+          PGPASSWORD=postgres psql -h localhost -U postgres \
+            -c "CREATE DATABASE customer_support_test"
+          PGPASSWORD=postgres psql -h localhost -U postgres -d customer_support_test \
+            -c "CREATE EXTENSION IF NOT EXISTS vector"
+      - run: uv run pytest -q tests/agent tests/agent_evals tests/test_chat_api.py tests/test_chat_hitl_api.py
+
+  migrations:
+    name: alembic upgrade head + check
+    runs-on: ubuntu-latest
+    services:
+      db:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: customer_support
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
+      - run: PGPASSWORD=postgres psql -h localhost -U postgres -d customer_support -c "CREATE EXTENSION IF NOT EXISTS vector"
+      - run: uv run alembic upgrade head
+      - run: uv run alembic check
+
+  rag-evals:
+    name: rag-evals --offline
+    runs-on: ubuntu-latest
+    services:
+      db:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: customer_support
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
+      - run: uv run python -m app.rag.evals.run --offline
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rag-evals-report
+          path: reports/rag-evals-*
+
+  agent-evals:
+    name: agent-evals --fake
+    runs-on: ubuntu-latest
+    services:
+      db:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: customer_support
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
+      - run: uv run python -m app.agent.evals.run --fake
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: agent-evals-report
+          path: reports/agent-evals-*
+
+  # The frontend lives in its own repository and has its own CI (lint, test,
+  # build); see README "Continuous integration".

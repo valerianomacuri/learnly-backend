@@ -146,7 +146,8 @@ async def test_approve_writes_payout_and_outbox_event(
     rid, _, _, _ = await approved_refund(client, make_user, make_purchase, make_refund)
     (event,) = await outbox_rows(session_maker)
     assert event.topic == "refund.payout"
-    assert event.payload == {"refund_id": str(rid)}
+    assert event.payload["refund_id"] == str(rid)
+    assert event.payload["trace_id"]  # spec 13: the approving request's trace id
     assert event.status is OutboxStatus.PENDING
     payout = await payout_row(session_maker, rid)
     assert payout.status is PayoutStatus.PENDING

@@ -162,7 +162,7 @@ def evals_database_url() -> str:
     return url.render_as_string(hide_password=False)
 
 
-async def _ensure_database(url: str) -> None:
+async def ensure_database(url: str) -> None:
     target = make_url(url)
     admin = create_async_engine(
         target.set(database="postgres"), isolation_level="AUTOCOMMIT"
@@ -383,7 +383,7 @@ async def evaluate(
 ) -> RunResult:
     policies = policies_dir or default_policies_dir()
     url = evals_database_url()
-    await _ensure_database(url)
+    await ensure_database(url)
     engine = create_async_engine(url)
     try:
         await reset_schema(engine)

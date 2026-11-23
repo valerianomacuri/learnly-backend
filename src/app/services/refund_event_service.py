@@ -7,6 +7,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.logging import current_trace_id
 from app.domain.enums import ActorType
 from app.models.refund import RefundEvent, RefundRequest
 from app.repositories.refund_event import RefundEventRepository
@@ -20,6 +21,15 @@ class EventActor:
 
     type: ActorType
     id: uuid.UUID | None = None
+
+
+def _with_trace(payload: dict[str, Any] | None) -> dict[str, Any]:
+    """Stamp the request's `trace_id` (spec 13) so an event leads to its trace."""
+    data = dict(payload or {})
+    trace_id = current_trace_id()
+    if trace_id and "trace_id" not in data:
+        data["trace_id"] = trace_id
+    return data
 
 
 class RefundEventService:
@@ -52,7 +62,7 @@ class RefundEventService:
             type=type,
             actor_type=actor.type,
             actor_id=actor.id,
-            payload=payload or {},
+            payload=_with_trace(payload),
         )
         if created_at is not None:
             event.created_at = created_at

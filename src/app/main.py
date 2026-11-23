@@ -1,4 +1,3 @@
-import logging
 import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import AsyncExitStack, asynccontextmanager
@@ -11,10 +10,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agent.runtime import start_runtime
 from app.api.problems import TRACE_HEADER, problem_response
 from app.api.routes import api_router
+from app.api.routes.ops import router as ops_router
 from app.core.config import get_settings
 from app.core.database import get_engine, get_sessionmaker
+from app.core.logging import configure_logging, trace_id_var
 from app.core.privacy import install_log_privacy
 from app.core.redis import open_redis
+from app.core.telemetry import setup_telemetry
 from app.domain.errors import DomainProblem
 from app.repositories.policy import PolicyRepository
 from app.services.errors import (
@@ -44,7 +46,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 def create_app() -> FastAPI:
     settings = get_settings()  # fail fast on invalid environment
-    logging.basicConfig(level=settings.log_level)
+    configure_logging(settings.log_level)
     install_log_privacy()
 
     app = FastAPI(title=settings.app_name, lifespan=lifespan)
@@ -71,6 +73,7 @@ def create_app() -> FastAPI:
         incoming = request.headers.get(TRACE_HEADER, "")
         trace_id = incoming if 0 < len(incoming) <= 128 else str(uuid.uuid4())
         request.state.trace_id = trace_id
+        trace_id_var.set(trace_id)
         response = await call_next(request)
         response.headers[TRACE_HEADER] = trace_id
         return response
@@ -100,7 +103,14 @@ def create_app() -> FastAPI:
     async def health() -> dict[str, str]:
         return {"status": "ok"}
 
+    app.include_router(ops_router)
     app.include_router(api_router, prefix="/api/v1")
+    setup_telemetry(
+        settings,
+        service="learnly-api",
+        app=app,
+        engine=get_engine() if settings.otel_enabled else None,
+    )
     return app
 
 

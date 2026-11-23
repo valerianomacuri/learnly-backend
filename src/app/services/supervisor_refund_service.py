@@ -7,6 +7,8 @@ from decimal import Decimal, InvalidOperation
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.core.logging import current_trace_id
+from app.core.metrics import DECISIONS, TIME_TO_DECISION
 from app.core.pagination import decode_keyset, encode_keyset
 from app.core.permissions import Perm
 from app.core.privacy import mask_email
@@ -334,6 +336,8 @@ class SupervisorRefundService:
             EventActor(ActorType.SUPERVISOR, principal.user_id),
             {"from": previous.value, "to": target.value, "version": refund.version},
         )
+        DECISIONS.labels(decision=target.value).inc()
+        TIME_TO_DECISION.observe(max(0.0, (now - refund.created_at).total_seconds()))
         if target is RefundStatus.APPROVED:
             # Same transaction as the state change (BR-22): all or nothing.
             await self._enqueue_payout(refund, create=True)
@@ -354,7 +358,10 @@ class SupervisorRefundService:
         await self.outbox.add(
             OutboxEvent(
                 topic=TOPIC_REFUND_PAYOUT,
-                payload={"refund_id": str(refund.id)},
+                payload={
+                    "refund_id": str(refund.id),
+                    **({"trace_id": tid} if (tid := current_trace_id()) else {}),
+                },
                 available_at=self.clock(),
             )
         )

@@ -7,6 +7,7 @@ RUN uv sync --frozen --no-dev --no-install-project
 COPY src ./src
 COPY migrations ./migrations
 COPY alembic.ini ./
+COPY policies ./policies
 RUN uv sync --frozen --no-dev
 
 FROM python:3.13-slim
@@ -16,5 +17,6 @@ RUN useradd --system --create-home appuser
 COPY --from=builder --chown=appuser:appuser /app /app
 USER appuser
 EXPOSE 8000
-# Migrations are run explicitly: docker compose run --rm api alembic upgrade head
+# Migrations, policy load, ingest and seed run in the compose `init` service
+# (or by hand: docker compose run --rm api alembic upgrade head).
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

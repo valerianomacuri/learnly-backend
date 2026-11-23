@@ -8,6 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.core.metrics import ELIGIBILITY_REJECTIONS, REFUND_REQUESTS
 from app.core.pagination import decode_cursor, encode_cursor
 from app.core.permissions import Perm
 from app.core.security import Principal
@@ -188,6 +189,8 @@ class RefundService:
             or result.amount is None
             or result.refund_method is None
         ):
+            for code in result.reason_codes:
+                ELIGIBILITY_REJECTIONS.labels(reason_code=code.value).inc()
             raise RefundNotEligible(
                 reason_codes=[code.value for code in result.reason_codes]
             )
@@ -249,6 +252,7 @@ class RefundService:
             ),
             {"channel": channel.value, "policy_version": result.policy_version},
         )
+        REFUND_REQUESTS.labels(channel=channel.value).inc()
         return RefundRead.model_validate(refund)
 
     @staticmethod

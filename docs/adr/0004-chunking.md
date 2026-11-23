@@ -1,6 +1,6 @@
-# ADR 0004 · Chunking estructural vs. tamaño fijo (borrador)
+# ADR 0004 · Chunking estructural vs. tamaño fijo
 
-**Estado:** borrador (se completa en el spec 13) · **Origen:** spec 08, ablación
+**Estado:** aceptada (spec 13) · **Origen:** spec 07 (pipeline), spec 08 (ablación)
 
 ## Contexto
 El RAG de políticas usa chunking estructural (por encabezado; tablas, listas y pares P/R de la FAQ atómicos; `section_path` verificable en las citas). La alternativa es ventanas fijas de ~500 tokens (`fixed_500`). Se comparan con el mismo set dorado (79 preguntas), mismos modelos (embeddings y LLM de `.env`), mismo retriever y mismos jueces; solo cambia `--strategy`.
@@ -28,8 +28,18 @@ Reportes: `reports/rag-evals-2026-11-15-{structural,fixed_500}-full.{json,md}` (
 - **Costo (−59 % de tokens):** el contexto de fixed_500 son documentos casi enteros. Latencia p95 equivalente.
 - **MRR (+0,13):** el chunk correcto sube de posición con estructura.
 
-## Decisión provisional
-Mantener estructural. La justificación es citas verificables por sección, mejor abstención, menor costo y mejor MRR, no Recall@5. Pendiente para el 13: repetir con un corpus mayor (donde Recall@5 sí discrimine) antes de cerrar el ADR.
+## Decisión
+Chunking **estructural** (por encabezado; tablas, listas y pares P/R de la FAQ atómicos; `section_path` verificable). La justificación es citas verificables por sección, mejor abstención, menor costo y mejor MRR, **no** Recall@5, donde fixed_500 es ligeramente mejor.
+
+## Alternativas
+1. **`fixed_500`** (ventanas de ~500 tokens). Más simple y con Recall@5 igual o mejor aquí, pero sin `section_path` propio: la verificación de citas rechaza respuestas correctas (abstención 0,44 vs 0,92) y el contexto cuesta 2,4× más tokens.
+2. **Un chunk por documento.** Peor precisión de contexto y citas solo a nivel de documento.
+3. **Semántico (por similitud entre frases).** No se probó: añade un modelo al camino de ingesta y no garantiza citas por sección.
+
+## Consecuencias
+- (+) Cada cita apunta a una sección real y comprobable; las respuestas ajenas a la política se abstienen mejor.
+- (−) Más chunks (51 vs 10) y dependencia de que los documentos tengan estructura de encabezados (`policies/*.md` la tiene; un PDF plano no).
+- (−) **Límite de la evidencia:** el corpus es de ~15 KB, así que Recall@5 no discrimina y esta ablación no demuestra que estructural recupere mejor a escala. Con un corpus mayor habría que repetirla; el comando es `uv run python -m app.rag.evals.run --strategy fixed_500` (y `structural`). No se repitió en el spec 13 por no contar con un corpus mayor.
 
 ## Salvedades
 - **Set dorado ajustado tras ver resultados:** la primera corrida completa dio Recall@5 = 0,896 (structural, umbral 0,90) y 0,985 (fixed_500). Se revisaron los fallos y 5 entradas (`g031`, `g033`, `g045`, `g054`, `g057`) se ampliaron con una sección equivalente cuyo texto contiene la respuesta (`A || B`). Tras eso: structural 0,955. Los reportes de la primera corrida están en `reports/first-run/`. Los fallos restantes (p. ej. `g061`, `g063`) son reales.

@@ -20,8 +20,11 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import get_settings
-from app.core.database import get_sessionmaker
+from app.core.database import get_engine, get_sessionmaker
+from app.core.logging import configure_logging, trace_id_var
+from app.core.metrics import PAYOUTS_DEAD
 from app.core.privacy import install_log_privacy
+from app.core.telemetry import setup_telemetry
 from app.domain.enums import (
     ActorType,
     OutboxStatus,
@@ -101,7 +104,12 @@ class PayoutWorker:
                 if event is None:
                     await session.rollback()
                     return False
-                await self._handle(session, event)
+                # The approving request's trace id follows the event (spec 13).
+                token = trace_id_var.set(str(event.payload.get("trace_id") or ""))
+                try:
+                    await self._handle(session, event)
+                finally:
+                    trace_id_var.reset(token)
                 await session.commit()
             except Exception:
                 await session.rollback()
@@ -123,6 +131,7 @@ class PayoutWorker:
         if refund is None or payout is None:
             event.status = OutboxStatus.DEAD
             event.updated_at = now
+            PAYOUTS_DEAD.inc()
             log.error(
                 "event=payout_dead outbox_id=%s reason=missing_refund_or_payout",
                 event.id,
@@ -255,6 +264,7 @@ class PayoutWorker:
             refund.updated_at = now
             event.status = OutboxStatus.DEAD  # dead-letter
             event.updated_at = now
+            PAYOUTS_DEAD.inc()
             # Alarm hook: one structured line that log-based alerts can match.
             log.error(
                 "event=payout_dead refund_id=%s outbox_id=%s attempts=%d "
@@ -321,8 +331,9 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Refund payout worker")
     parser.add_argument("--once", action="store_true", help="drain due events and exit")
     args = parser.parse_args(argv)
-    logging.basicConfig(level=get_settings().log_level)
+    configure_logging(get_settings().log_level)
     install_log_privacy()
+    setup_telemetry(get_settings(), service="learnly-worker", engine=get_engine())
     # psycopg async cannot use Windows' default ProactorEventLoop.
     factory = asyncio.SelectorEventLoop if sys.platform == "win32" else None
     with asyncio.Runner(loop_factory=factory) as runner:

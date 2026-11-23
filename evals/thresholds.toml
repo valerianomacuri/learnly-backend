@@ -20,3 +20,11 @@ poisoned_leaks = 0
 recall_at_5 = 0.70
 correct_figures = 1.0
 poisoned_leaks = 0
+
+# Agent evals (spec 13): `python -m app.agent.evals.run [--fake]`. `min`: value >=
+# threshold; `max`: value <= threshold. Same bar in both modes: the scripted
+# conversations are deterministic, only the model behind them changes.
+[agent]
+intent_accuracy = 0.95
+task_completion = 0.90
+unauthorized_tool_calls = 0

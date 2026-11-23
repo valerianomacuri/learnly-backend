@@ -1,7 +1,113 @@
-# API
+# Learnly Refunds
 
-FastAPI + SQLAlchemy 2 (async) + PostgreSQL base with authentication (JWT) and RBAC
-(users, roles, permissions). Domain entities are meant to be added on top.
+Soporte al cliente con reembolsos: un agente conversacional (LangGraph + RAG sobre las
+políticas) y un formulario manual comparten **un solo punto de entrada de dominio**;
+la elegibilidad la decide código determinista, el cliente confirma explícitamente
+(human-in-the-loop) y solo un supervisor aprueba. El pago sale por un outbox y un
+worker. Backend: FastAPI + SQLAlchemy 2 (async) + PostgreSQL/pgvector + Redis.
+Frontend (repo hermano `../learnly-frontend`): Vite + React 19.
+
+Decisiones de arquitectura: [docs/adr/](docs/adr/) · Demo de 3 minutos:
+[docs/demo.md](docs/demo.md) · Rúbrica autoevaluada: [docs/rubrica.md](docs/rubrica.md) ·
+Specs: [docs/specs/](docs/specs/README.md)
+
+## Arquitectura
+
+```mermaid
+flowchart LR
+    subgraph Clientes
+      C[Customer] --> FE[Frontend React]
+      S[Supervisor] --> FE
+    end
+    FE -- "REST + SSE" --> API[FastAPI]
+    subgraph API_internals [API]
+      API --> RS[RefundService<br/>único punto de entrada]
+      API --> AG[Agente LangGraph<br/>guardrails + HITL interrupt]
+      AG -- "tools de lectura<br/>(LLM_BOUND_TOOLS)" --> SV[Servicios]
+      AG -- "escritura solo tras confirmar<br/>(nodos, no el LLM)" --> RS
+      AG --> RAG[RAG: híbrido + RRF<br/>citas verificadas]
+      RS --> ENG[RefundPolicyEngine<br/>puro y determinista]
+    end
+    RS --> PG[(PostgreSQL + pgvector<br/>refund_events append-only)]
+    RAG --> PG
+    AG -- checkpointer --> PG
+    API <--> RD[(Redis<br/>rate limit, locks, tokens)]
+    PG -- outbox --> W[Payout worker<br/>SKIP LOCKED, backoff, dead-letter]
+    W --> GW[Gateway simulado]
+    API -. "/metrics /readyz" .-> PR[Prometheus / Grafana]
+    API -. "OTLP (opt-in)" .-> OT[OTel collector]
+    AG -. "LangSmith (opt-in, PII scrub)" .-> LS[(LangSmith)]
+```
+
+## Inicio rápido (`docker compose up`)
+
+```bash
+cp .env.example .env            # opcional: el compose funciona con valores por defecto
+docker compose up -d --build    # db + redis -> init (migra, carga políticas, ingesta, semilla) -> api, worker, frontend
+curl -s localhost:8000/readyz   # {"status":"ready", ...}
+docker compose logs init        # usuarios semilla y contraseña
+```
+
+- Frontend: http://localhost:5173 · API: http://localhost:8000 (docs en `/docs`).
+- El servicio `frontend` se construye desde `../learnly-frontend` (repo hermano). Solo backend:
+  `docker compose up -d db redis init api worker`.
+- **Sin `OPENAI_API_KEY`** el chat responde 503 y se omite `rag-ingest`; el formulario manual,
+  el dashboard y el worker funcionan igual. Con la clave en `.env`, `init` también ingesta las
+  políticas y el chat queda activo.
+- Observabilidad: `docker compose --profile observability up -d` (OTel collector :4318,
+  Prometheus :9090, Grafana :3000 con el dashboard `ops/grafana/learnly.json`).
+- Desde cero: `docker compose down -v && docker compose up -d --build`.
+
+## Comandos
+
+| Comando | Qué hace |
+| --- | --- |
+| `make up` / `make down` | Levanta / detiene todo el stack con datos semilla |
+| `make db` | Solo Postgres + Redis (para correr la API desde el código) |
+| `make run` | API con recarga (`uv run uvicorn ...`) |
+| `make test` | Toda la suite (`uv run pytest`; los tests con BD se omiten si Postgres no responde) |
+| `make cov` | Suite con la puerta de cobertura de `domain/` (≥ 85 %) |
+| `make lint` · `make typecheck` | `ruff check` + `ruff format --check` · `mypy --strict` |
+| `make rag-evals` | Evals del RAG sin clave (`--offline`); `make rag-evals-live` con modelo real |
+| `make agent-evals` | 30 guiones del agente con LLM falso (`--fake`); `make agent-evals-live` con modelo real |
+| `make evals` | `rag-evals` + `agent-evals` (umbrales en `evals/thresholds.toml`) |
+| `make check` | lint + typecheck + test + evals |
+| `make demo` | `up` y apunta a la guía de [docs/demo.md](docs/demo.md) |
+
+Sin `make` (Windows): ejecuta los `uv run ...` equivalentes del [Makefile](Makefile).
+
+## Observabilidad
+
+- **Logs JSON** (`core/logging.py`) con `trace_id` y `user_id` (id, nunca el email) y filtro de PII. El
+  `trace_id` (cabecera `X-Request-ID`) viaja API → servicio → grafo (`configurable.request_id`) →
+  `outbox_events.payload` → worker, y queda en `refund_events.payload.trace_id`: dado un `refund_id`
+  se llega a los logs y a la traza del run que lo creó.
+- **Trazas del grafo por nodo (LangSmith, opt-in):** `TRACING_PROVIDER=langsmith`, `LANGSMITH_API_KEY`,
+  `LANGSMITH_PROJECT`, `LANGSMITH_ENDPOINT` (autoalojado). Por defecto `none`: sin red. Las entradas y salidas
+  pasan por un scrub de PII; filtro en LangSmith: `metadata.request_id = <trace_id>`. Ver
+  [ADR 0008](docs/adr/0008-langsmith-para-trazas.md) (los datos salen a un SaaS: activar con criterio).
+- **OpenTelemetry** (API y worker, FastAPI + SQLAlchemy): `OTEL_ENABLED=true`, `OTEL_EXPORTER_OTLP_ENDPOINT`.
+- **Probes:** `/healthz` (liveness), `/readyz` (BD, Redis y vector store con timeout de 2 s; 503 con el detalle
+  de lo que falla). **Métricas:** `/metrics` (Prometheus; `METRICS_TOKEN` opcional, si no mantenerlo en red
+  interna). Series: `refund_requests_total{channel}`, `refund_eligibility_rejections_total{reason_code}`,
+  `refund_confirmations_total{decision}`, `refund_decisions_total{decision}`,
+  `refund_time_to_decision_seconds`, `refund_sla_breached`, `refund_outbox_pending`, `refund_outbox_dead`,
+  `refund_llm_latency_seconds`, `refund_llm_cost_usd_total` (estimado). Alertas de ejemplo en `ops/alerts.yml`.
+
+## Integración continua
+
+[.github/workflows/ci.yml](.github/workflows/ci.yml): `lint` (ruff, mypy strict), `unit`, `api` (Postgres +
+pgvector y Redis; cobertura de `domain/` ≥ 85 %), `graph` (LLM falso), `migrations` (`alembic upgrade head` +
+`alembic check`), `rag-evals --offline` y `agent-evals --fake`. Todo corre con `TRACING_PROVIDER=none`, sin
+clave ni red. El frontend vive en su propio repositorio con su CI (`lint`, `test`, `build`).
+
+**Bloquear el merge:** en GitHub → Settings → Branches → regla para `main` con "Require status checks to
+pass" marcando `lint`, `unit`, `api`, `graph`, `migrations`, `rag-evals --offline` y `agent-evals --fake`.
+`pre-commit` (ruff, ruff-format, mypy): `uv run pre-commit install` (config en `.pre-commit-config.yaml`).
+
+---
+
+# Referencia de desarrollo
 
 ## Prerequisites
 
@@ -91,7 +197,7 @@ uv run uvicorn app.main:app --reload --app-dir src
 
 - API: http://localhost:8000 (routes under `/api/v1`)
 - Docs: http://localhost:8000/docs
-- Health: http://localhost:8000/health (alias: `/healthz`)
+- Health: http://localhost:8000/health (alias: `/healthz`) · readiness: `/readyz` · metrics: `/metrics`
 
 ## Seed data (development)
 
@@ -129,15 +235,15 @@ purchase answers the same `404` as a missing one; a supervisor gets `403`.
 ## Production build
 
 ```bash
-docker compose --profile production build api   # or: docker build -t api .
-docker compose up -d db
-docker compose --profile production run --rm api alembic upgrade head   # migrate first
-docker compose --profile production up -d api
+docker build -t learnly-backend .
+# the `init` service of docker-compose.yml shows the startup order:
+#   alembic upgrade head -> policies-load -> rag-ingest -> (seed only outside production)
 ```
 
-The image runs as a non-root user and does **not** run migrations automatically.
-In production set `ENVIRONMENT=production`, a strong `POSTGRES_PASSWORD`, and a
-`DATABASE_URL` pointing at your managed database; never commit `.env`.
+The image runs as a non-root user and does **not** run migrations automatically (the compose
+`init` job does). In production set `ENVIRONMENT=production`, a strong `JWT_SECRET` and
+`POSTGRES_PASSWORD`, and a `DATABASE_URL` pointing at your managed database; never commit
+`.env`. `seed` refuses to run with `ENVIRONMENT=production`.
 
 ## Migrations
 

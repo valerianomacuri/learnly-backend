@@ -1,5 +1,7 @@
 """`AgentRuntime`: the compiled graph plus what the API needs to run it."""
 
+import logging
+import time
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack
@@ -8,6 +10,7 @@ from typing import Any
 
 from langchain_core.messages import AnyMessage, HumanMessage
 from langchain_core.runnables import RunnableConfig
+from langchain_core.tracers.langchain import LangChainTracer
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command
 from redis.asyncio import Redis
@@ -23,11 +26,15 @@ from app.agent.deps import AgentDeps
 from app.agent.graph import RECURSION_LIMIT, build_graph
 from app.agent.llm import get_chat_model
 from app.agent.sse import translate
+from app.agent.tracing import build_tracer, run_metadata
 from app.core.config import get_settings
+from app.core.metrics import LLM_LATENCY, record_llm_tokens
 from app.core.security import Principal
 from app.rag.embeddings import get_embedder
 from app.rag.retriever import PolicyRetriever, get_reranker
 from app.schemas.chat import ChatMessageRead
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -35,6 +42,8 @@ class AgentRuntime:
     graph: CompiledStateGraph[Any, Any, Any, Any]
     session_maker: async_sessionmaker[AsyncSession]
     budget: TokenBudget | None = None
+    # Opt-in LangSmith tracer (spec 13); `None` = no tracing, no network.
+    tracer: LangChainTracer | None = None
 
     def config(
         self, principal: Principal, thread_id: uuid.UUID, request_id: str
@@ -72,7 +81,18 @@ class AgentRuntime:
             return
         usage = UsageCallback()
         existing: Any = config.get("callbacks") or []
-        run_config: RunnableConfig = {**config, "callbacks": [*existing, usage]}
+        callbacks = [*existing, usage]
+        run_config: RunnableConfig = {**config, "callbacks": callbacks}
+        if self.tracer is not None:  # fail-open: tracing never breaks a turn
+            try:
+                callbacks.append(self.tracer)
+                run_config["metadata"] = {
+                    **(config.get("metadata") or {}),
+                    **run_metadata(dict(config)),
+                }
+            except Exception:
+                logger.exception("could not attach the tracer; running untraced")
+        started = time.monotonic()
         raw: AsyncIterator[tuple[str, Any]] = self.graph.astream(  # type: ignore[assignment]
             payload, run_config, stream_mode=["updates", "custom"]
         )
@@ -80,6 +100,8 @@ class AgentRuntime:
             async for event in translate(raw):
                 yield event
         finally:
+            LLM_LATENCY.observe(time.monotonic() - started)
+            record_llm_tokens(usage.total)
             if self.budget is not None:
                 await self.budget.add(thread_id, usage.total)
 
@@ -148,4 +170,6 @@ async def start_runtime(
         llm_timeout_s=settings.llm_timeout_s,
     )
     budget = TokenBudget(redis, settings.thread_token_budget)
-    return AgentRuntime(build_graph(deps, checkpointer), session_maker, budget)
+    return AgentRuntime(
+        build_graph(deps, checkpointer), session_maker, budget, build_tracer(settings)
+    )
