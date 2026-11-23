@@ -9,7 +9,7 @@ Frontend (repo hermano `../learnly-frontend`): Vite + React 19.
 
 Decisiones de arquitectura: [docs/adr/](docs/adr/) · Demo de 3 minutos:
 [docs/demo.md](docs/demo.md) · Rúbrica autoevaluada: [docs/rubrica.md](docs/rubrica.md) ·
-Specs: [docs/specs/](docs/specs/README.md)
+Specs: [specs/](specs/README.md) (GitHub Spec Kit; principles in [constitution](.specify/memory/constitution.md))
 
 ## Arquitectura
 
@@ -405,4 +405,4 @@ tokens (`core/privacy.RedactingFilter`).
 
 ## Specs
 
-Implementation specs live in [docs/specs/](docs/specs/README.md).
+Implementation specs live in [specs/](specs/README.md) (Spec Kit: `/speckit-specify`, `/speckit-plan`, `/speckit-tasks`, `/speckit-implement`).

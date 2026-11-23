@@ -1,6 +1,6 @@
 # Learnly Refunds Constitution
 
-Fuente de estos principios: `docs/challenge.md`, `docs/specs/00-fundamentos.md` (ahora `specs/00-fundamentos/`), las decisiones de `docs/adr/` y las reglas de `CLAUDE.md`. Ante un conflicto, la constitution manda sobre cualquier spec.
+Fuente de estos principios: `docs/challenge.md`, `specs/000-fundamentos/` (migrada desde `docs/specs/00-fundamentos.md`), las decisiones de `docs/adr/` y las reglas de `CLAUDE.md`. Ante un conflicto, la constitution manda sobre cualquier spec.
 
 ## Core Principles
 
