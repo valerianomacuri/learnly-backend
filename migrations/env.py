@@ -15,6 +15,23 @@ if config.config_file_name is not None:
 
 target_metadata = Base.metadata
 
+# Tables owned by LangGraph's AsyncPostgresSaver, created by its own setup() at app
+# startup (spec 09); they are not models, so autogenerate/check must not treat them
+# as drift.
+CHECKPOINTER_TABLES = frozenset(
+    {"checkpoints", "checkpoint_blobs", "checkpoint_writes", "checkpoint_migrations"}
+)
+
+
+def include_object(object, name, type_, reflected, compare_to):  # type: ignore[no-untyped-def]  # noqa: A002
+    if type_ == "table" and reflected and name in CHECKPOINTER_TABLES:
+        return False
+    # Indexes of those tables are reflected too.
+    table = getattr(object, "table", None)
+    if type_ == "index" and table is not None and table.name in CHECKPOINTER_TABLES:
+        return False
+    return True
+
 
 def run_migrations_offline() -> None:
     context.configure(
@@ -22,6 +39,7 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         compare_type=True,
+        include_object=include_object,
     )
     with context.begin_transaction():
         context.run_migrations()
@@ -29,7 +47,10 @@ def run_migrations_offline() -> None:
 
 def do_run_migrations(connection: Connection) -> None:
     context.configure(
-        connection=connection, target_metadata=target_metadata, compare_type=True
+        connection=connection,
+        target_metadata=target_metadata,
+        compare_type=True,
+        include_object=include_object,
     )
     with context.begin_transaction():
         context.run_migrations()
