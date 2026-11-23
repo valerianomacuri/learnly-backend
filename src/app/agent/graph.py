@@ -34,8 +34,8 @@ from app.agent.nodes.collect_refund_info import (
 from app.agent.nodes.create_refund import make_create_refund, route_created
 from app.agent.nodes.entry_router import entry_router, route_entry
 from app.agent.nodes.explain_ineligible import make_explain_ineligible
-from app.agent.nodes.guard_input import guard_input, route_guard
-from app.agent.nodes.guard_output import guard_output
+from app.agent.nodes.guard_input import make_guard_input, route_guard
+from app.agent.nodes.guard_output import make_guard_output
 from app.agent.nodes.handoff import make_handoff
 from app.agent.nodes.policy_qa import make_policy_qa, route_policy
 from app.agent.nodes.prepare_confirmation import (
@@ -82,7 +82,7 @@ def build_graph(
 ) -> CompiledStateGraph[Any, Any, Any, Any]:
     graph = StateGraph(SupportState)
     graph.add_node("entry_router", entry_router)
-    graph.add_node("guard_input", guard_input)
+    graph.add_node("guard_input", _n(make_guard_input(deps)))
     graph.add_node("classify_intent", _n(make_classify_intent(deps)))
     graph.add_node("policy_qa", _n(make_policy_qa(deps)), retry_policy=RETRY)
     graph.add_node("refund_status", _n(make_refund_status(deps)), retry_policy=RETRY)
@@ -107,7 +107,7 @@ def build_graph(
     graph.add_node("request_cancel_confirmation", request_cancel_confirmation)
     graph.add_node("cancel_refund_apply", _n(make_cancel_refund_apply(deps)))
     graph.add_node("handoff", _n(make_handoff(deps)))
-    graph.add_node("guard_output", guard_output)
+    graph.add_node("guard_output", _n(make_guard_output(deps)))
     graph.add_node("respond", respond)
 
     graph.add_edge(START, "entry_router")

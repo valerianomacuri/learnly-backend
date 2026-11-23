@@ -7,6 +7,7 @@ to the other so `PolicyAnswerer` is reused unchanged.
 
 import asyncio
 from collections.abc import AsyncIterator, Iterator, Sequence
+from functools import cache
 from typing import Any, TypeVar
 
 from langchain_core.callbacks import (
@@ -19,24 +20,43 @@ from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResu
 from langchain_core.runnables import Runnable, RunnableLambda
 from pydantic import BaseModel, Field
 
+from app.agent.resilience import CircuitBreaker, Resilience, ResilientChatModel
 from app.core.config import get_settings
 from app.rag.embeddings import EmbeddingsUnavailableError
 
 T = TypeVar("T", bound=BaseModel)
 
 
+@cache
+def get_resilience() -> Resilience:
+    """One breaker per process, shared by every model built by `get_chat_model`."""
+    settings = get_settings()
+    return Resilience(
+        CircuitBreaker(settings.breaker_failure_threshold, settings.breaker_reset_s)
+    )
+
+
 def get_chat_model() -> BaseChatModel:
+    """OpenAI primary (+ optional fallback model) behind retries and a breaker."""
     settings = get_settings()
     if settings.openai_api_key is None:
         raise EmbeddingsUnavailableError("OPENAI_API_KEY is not set")
     from langchain_openai import ChatOpenAI
 
-    return ChatOpenAI(
-        model=settings.llm_model,
-        api_key=settings.openai_api_key,
-        temperature=0,
-        timeout=settings.llm_timeout_s,
-        max_retries=settings.llm_max_retries,
+    def build(model: str) -> BaseChatModel:
+        return ChatOpenAI(
+            model=model,
+            api_key=settings.openai_api_key,
+            temperature=0,
+            timeout=settings.llm_timeout_s,
+            max_retries=settings.llm_max_retries,
+        )
+
+    fallback = (
+        build(settings.llm_fallback_model) if settings.llm_fallback_model else None
+    )
+    return ResilientChatModel(
+        primary=build(settings.llm_model), fallback=fallback, policy=get_resilience()
     )
 
 
@@ -64,7 +84,7 @@ class FakeChatModel(BaseChatModel):
     `bound_tools` records what `bind_tools` received.
     """
 
-    script: list[AIMessage | Exception] = Field(default_factory=list)
+    script: list[Any] = Field(default_factory=list)  # AIMessage | Exception
     structured: dict[str, Any] = Field(default_factory=dict)
     calls: list[list[BaseMessage]] = Field(default_factory=list)
     structured_calls: list[str] = Field(default_factory=list)
@@ -81,6 +101,7 @@ class FakeChatModel(BaseChatModel):
         item = self.script.pop(0)
         if isinstance(item, Exception):
             raise item
+        assert isinstance(item, AIMessage)
         return item
 
     def _generate(

@@ -1,6 +1,7 @@
 """Outbox + payout worker (spec 05)."""
 
 import asyncio
+import logging
 import uuid
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -328,6 +329,7 @@ async def test_transient_failures_back_off_then_fail_and_manual_retry_completes(
     make_user: MakeUser,
     make_purchase: MakePurchase,
     make_refund: MakeRefund,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     rid, _, sup, _ = await approved_refund(
         client, make_user, make_purchase, make_refund
@@ -366,6 +368,11 @@ async def test_transient_failures_back_off_then_fail_and_manual_retry_completes(
     assert payout.status is PayoutStatus.FAILED and payout.attempts == 3
     (event,) = await outbox_rows(session_maker)
     assert event.status is OutboxStatus.DEAD
+    # Spec 12: dead-letter raises one structured, alertable log line.
+    alarms = [r for r in caplog.records if "event=payout_dead" in r.getMessage()]
+    assert len(alarms) == 1 and alarms[0].levelno == logging.ERROR
+    assert f"refund_id={rid}" in alarms[0].getMessage()
+    assert "attempts=3" in alarms[0].getMessage()
     assert gateway.payments_made == 0
     assert (await event_types(session_maker, rid))[-1] == "REFUND_FAILED"
 

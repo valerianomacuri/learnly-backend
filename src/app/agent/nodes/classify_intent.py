@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from app.agent.deps import AgentDeps, last_user_text
 from app.agent.nodes.keyword_classifier import classify_by_keywords
 from app.agent.prompts import CLASSIFIER_SYSTEM
+from app.agent.resilience import LLMUnavailableError
 from app.agent.state import Intent, SupportState
 
 logger = logging.getLogger("app.agent.classify")
@@ -45,6 +46,10 @@ def make_classify_intent(
                     "retries": attempt - 1,
                     "guardrail_flags": flags,
                 }
+            except LLMUnavailableError:
+                # Outage, not a bad answer: the run ends with an explicit
+                # LLM_UNAVAILABLE error (the manual form keeps working).
+                raise
             except Exception as exc:
                 logger.warning("classifier attempt %d failed: %r", attempt, exc)
         flags.append("classifier_degraded")

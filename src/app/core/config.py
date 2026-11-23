@@ -59,6 +59,17 @@ class Settings(BaseSettings):
     relevance_threshold: float = Field(default=0.25, ge=0, le=1)
     rerank_model: str = "BAAI/bge-reranker-base"
 
+    # Security & resilience (spec 12). No Redis => reads fail open, writes fail closed.
+    redis_url: str | None = None
+    chat_rate_limit: int = Field(default=20, gt=0)
+    chat_rate_window_s: int = Field(default=60, gt=0)
+    refund_rate_limit: int = Field(default=5, gt=0)
+    refund_rate_window_s: int = Field(default=3600, gt=0)
+    thread_token_budget: int = Field(default=50_000, gt=0)
+    llm_fallback_model: str | None = None
+    breaker_failure_threshold: int = Field(default=5, gt=0)
+    breaker_reset_s: float = Field(default=30.0, gt=0)
+
     @field_validator("cors_origins", mode="before")
     @classmethod
     def _split_origins(cls, value: object) -> object:

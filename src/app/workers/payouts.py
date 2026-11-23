@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.config import get_settings
 from app.core.database import get_sessionmaker
+from app.core.privacy import install_log_privacy
 from app.domain.enums import (
     ActorType,
     OutboxStatus,
@@ -122,7 +123,10 @@ class PayoutWorker:
         if refund is None or payout is None:
             event.status = OutboxStatus.DEAD
             event.updated_at = now
-            log.error("outbox %s points to a missing refund or payout", event.id)
+            log.error(
+                "event=payout_dead outbox_id=%s reason=missing_refund_or_payout",
+                event.id,
+            )
             return
         if refund.status not in (RefundStatus.APPROVED, RefundStatus.PROCESSING):
             # Already completed (double delivery) or out of the flow: nothing to do.
@@ -251,6 +255,16 @@ class PayoutWorker:
             refund.updated_at = now
             event.status = OutboxStatus.DEAD  # dead-letter
             event.updated_at = now
+            # Alarm hook: one structured line that log-based alerts can match.
+            log.error(
+                "event=payout_dead refund_id=%s outbox_id=%s attempts=%d "
+                "permanent=%s last_error=%s",
+                refund.id,
+                event.id,
+                payout.attempts,
+                permanent,
+                error,
+            )
             await session.flush()
             await events.append(
                 refund.id,
@@ -308,6 +322,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--once", action="store_true", help="drain due events and exit")
     args = parser.parse_args(argv)
     logging.basicConfig(level=get_settings().log_level)
+    install_log_privacy()
     # psycopg async cannot use Windows' default ProactorEventLoop.
     factory = asyncio.SelectorEventLoop if sys.platform == "win32" else None
     with asyncio.Runner(loop_factory=factory) as runner:

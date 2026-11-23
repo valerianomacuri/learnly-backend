@@ -4,8 +4,9 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
 
-from app.api.deps import RefundServiceDep, requires
+from app.api.deps import RefundServiceDep, rate_limit, requires
 from app.api.problems import problem_response
+from app.core.config import get_settings
 from app.core.permissions import Perm
 from app.core.security import Principal
 from app.domain.enums import Channel, RefundStatus
@@ -25,6 +26,13 @@ SimulatorDep = Annotated[Principal, Depends(requires(Perm.REFUND_SIMULATE))]
 CreatorDep = Annotated[Principal, Depends(requires(Perm.REFUND_CREATE))]
 ReaderDep = Annotated[Principal, Depends(requires(Perm.REFUND_READ_OWN))]
 CancellerDep = Annotated[Principal, Depends(requires(Perm.REFUND_CANCEL_OWN))]
+_cfg = get_settings()
+CreateLimitDep = Annotated[
+    None,
+    Depends(
+        rate_limit("refund-create", _cfg.refund_rate_limit, _cfg.refund_rate_window_s)
+    ),
+]
 
 
 @router.post("/preview", response_model=PreviewResult)
@@ -41,6 +49,7 @@ async def create_refund(
     body: RefundCreate,
     service: RefundServiceDep,
     principal: CreatorDep,
+    _limit: CreateLimitDep,
     idempotency_key: Annotated[
         str, Header(alias="Idempotency-Key", min_length=1, max_length=255)
     ],

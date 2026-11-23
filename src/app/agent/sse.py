@@ -9,8 +9,15 @@ import logging
 from collections.abc import AsyncIterator
 from typing import Any
 
+from app.agent.resilience import LLMUnavailableError
+
 logger = logging.getLogger("app.agent.sse")
 
+LLM_UNAVAILABLE_CODE = "LLM_UNAVAILABLE"
+LLM_UNAVAILABLE_MESSAGE = (
+    "El asistente no está disponible en este momento. Puedes solicitar tu "
+    "reembolso con el formulario manual mientras tanto."
+)
 EVENT_TYPES = ("token", "tool_call", "tool_result", "interrupt", "final", "error")
 _CUSTOM_EVENTS = {"token", "tool_call", "tool_result"}
 
@@ -54,6 +61,12 @@ async def translate(
                 final = _final(update) if isinstance(update, dict) else None
                 if final is not None:
                     yield "final", final
+    except LLMUnavailableError:
+        logger.error("event=llm_unavailable (breaker open or retries exhausted)")
+        yield (
+            "error",
+            {"code": LLM_UNAVAILABLE_CODE, "message": LLM_UNAVAILABLE_MESSAGE},
+        )
     except Exception:
         logger.exception("agent run failed")
         # Never leak internals: the client gets a generic, stable error.

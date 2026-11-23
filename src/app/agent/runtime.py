@@ -10,8 +10,15 @@ from langchain_core.messages import AnyMessage, HumanMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.agent.budget import (
+    BUDGET_ERROR_CODE,
+    BUDGET_MESSAGE,
+    TokenBudget,
+    UsageCallback,
+)
 from app.agent.deps import AgentDeps
 from app.agent.graph import RECURSION_LIMIT, build_graph
 from app.agent.llm import get_chat_model
@@ -27,6 +34,7 @@ from app.schemas.chat import ChatMessageRead
 class AgentRuntime:
     graph: CompiledStateGraph[Any, Any, Any, Any]
     session_maker: async_sessionmaker[AsyncSession]
+    budget: TokenBudget | None = None
 
     def config(
         self, principal: Principal, thread_id: uuid.UUID, request_id: str
@@ -46,21 +54,34 @@ class AgentRuntime:
     def stream(
         self, config: RunnableConfig, content: str
     ) -> AsyncIterator[tuple[str, dict[str, Any]]]:
-        raw: AsyncIterator[tuple[str, Any]] = self.graph.astream(  # type: ignore[assignment]
-            {"messages": [HumanMessage(content=content)]},
-            config,
-            stream_mode=["updates", "custom"],
-        )
-        return translate(raw)
+        return self._run(config, {"messages": [HumanMessage(content=content)]})
 
     def resume(
         self, config: RunnableConfig, value: dict[str, Any]
     ) -> AsyncIterator[tuple[str, dict[str, Any]]]:
         """Continue a graph stopped at `interrupt()` with the customer's decision."""
+        return self._run(config, Command(resume=value))
+
+    async def _run(
+        self, config: RunnableConfig, payload: Any
+    ) -> AsyncIterator[tuple[str, dict[str, Any]]]:
+        """One graph run under the thread's token budget (spec 12)."""
+        thread_id = config["configurable"]["thread_id"]
+        if self.budget is not None and await self.budget.exhausted(thread_id):
+            yield "error", {"code": BUDGET_ERROR_CODE, "message": BUDGET_MESSAGE}
+            return
+        usage = UsageCallback()
+        existing: Any = config.get("callbacks") or []
+        run_config: RunnableConfig = {**config, "callbacks": [*existing, usage]}
         raw: AsyncIterator[tuple[str, Any]] = self.graph.astream(  # type: ignore[assignment]
-            Command(resume=value), config, stream_mode=["updates", "custom"]
+            payload, run_config, stream_mode=["updates", "custom"]
         )
-        return translate(raw)
+        try:
+            async for event in translate(raw):
+                yield event
+        finally:
+            if self.budget is not None:
+                await self.budget.add(thread_id, usage.total)
 
     async def pending_interrupt(self, config: RunnableConfig) -> dict[str, Any] | None:
         """The card of the interrupt the thread is waiting on (survives a restart)."""
@@ -91,7 +112,9 @@ class AgentRuntime:
 
 
 async def start_runtime(
-    session_maker: async_sessionmaker[AsyncSession], stack: AsyncExitStack
+    session_maker: async_sessionmaker[AsyncSession],
+    stack: AsyncExitStack,
+    redis: Redis | None = None,
 ) -> AgentRuntime | None:
     """Production wiring; `None` (chat answers 503) without an OpenAI key."""
     settings = get_settings()
@@ -124,4 +147,5 @@ async def start_runtime(
         retriever_factory=retriever_factory,
         llm_timeout_s=settings.llm_timeout_s,
     )
-    return AgentRuntime(build_graph(deps, checkpointer), session_maker)
+    budget = TokenBudget(redis, settings.thread_token_budget)
+    return AgentRuntime(build_graph(deps, checkpointer), session_maker, budget)

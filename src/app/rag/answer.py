@@ -16,6 +16,7 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
+from app.core.untrusted import defang
 from app.domain.policy_config import PolicyConfig
 from app.rag.llm import ChatModel
 from app.rag.reason_map import PATH_SEPARATOR, doc_label, unqualify
@@ -114,15 +115,15 @@ def _context(chunks: list[RetrievedChunk]) -> str:
     blocks: list[str] = []
     seen_parents: set[object] = set()
     for chunk in chunks:
-        body = chunk.content
+        body = defang(chunk.content)
         if chunk.parent_id is not None and chunk.parent_id not in seen_parents:
             seen_parents.add(chunk.parent_id)
-            body = f"{chunk.parent_content}\n\n{body}"
-        blocks.append(
-            f'<chunk doc="{chunk.doc_key}" section="{chunk.section_path}">\n'
-            f"{body}\n</chunk>"
-        )
-    return "<context>\n" + "\n".join(blocks) + "\n</context>"
+            body = f"{defang(chunk.parent_content or '')}\n\n{body}"
+        doc, section = defang(chunk.doc_key), defang(chunk.section_path)
+        blocks.append(f'<chunk doc="{doc}" section="{section}">\n{body}\n</chunk>')
+    context = "<context>\n" + "\n".join(blocks) + "\n</context>"
+    # Retrieved text is data: the whole block is untrusted (spec 12).
+    return f'<untrusted kind="policy-chunks">\n{context}\n</untrusted>'
 
 
 class PolicyAnswerer:

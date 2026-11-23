@@ -18,3 +18,27 @@ class DomainProblem(Exception):  # noqa: N818 - rendered as a problem, not an er
         self.detail = detail or self.default_detail
         self.reason_codes = list(reason_codes or [])
         super().__init__(self.detail)
+
+
+class RateLimited(DomainProblem):
+    code = "RATE_LIMITED"
+    status = 429
+    default_detail = "Too many requests, retry later"
+
+    def __init__(self, retry_after: int, detail: str | None = None) -> None:
+        super().__init__(detail)
+        self.retry_after = max(1, int(retry_after))
+
+
+class RateLimitUnavailable(DomainProblem):
+    """Redis is down and the route is a write: fail closed."""
+
+    code = "RATE_LIMIT_UNAVAILABLE"
+    status = 503
+    default_detail = "The service is temporarily unavailable"
+
+
+class RunInProgress(DomainProblem):
+    code = "RUN_IN_PROGRESS"
+    status = 409
+    default_detail = "Another run is already in progress for this thread"

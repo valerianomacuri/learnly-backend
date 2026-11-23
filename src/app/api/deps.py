@@ -1,13 +1,16 @@
-from collections.abc import Callable
+import logging
+from collections.abc import Awaitable, Callable
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_session
 from app.core.permissions import Perm
+from app.core.rate_limit import SlidingWindowLimiter
 from app.core.security import InvalidTokenError, Principal, decode_access_token
+from app.domain.errors import RateLimited, RateLimitUnavailable
 from app.repositories.user import UserRepository
 from app.services.auth_service import AuthService
 from app.services.eligibility_service import EligibilityService
@@ -61,6 +64,37 @@ def requires(permission: Perm) -> Callable[[Principal], Principal]:
                 status.HTTP_403_FORBIDDEN, f"Missing permission: {permission}"
             )
         return principal
+
+    return dependency
+
+
+logger = logging.getLogger(__name__)
+
+
+def rate_limit(
+    name: str, limit: int, window_s: int, *, write: bool = True
+) -> Callable[[Request, Principal], Awaitable[None]]:
+    """Per-customer sliding-window limit (429 + `Retry-After`).
+
+    No `REDIS_URL` => limiting is off. Redis configured but failing => a read
+    (`write=False`) fails open, a write fails closed with 503.
+    """
+
+    async def dependency(request: Request, principal: PrincipalDep) -> None:
+        redis = getattr(request.app.state, "redis", None)
+        if redis is None:
+            return
+        try:
+            decision = await SlidingWindowLimiter(redis).hit(
+                f"rl:{name}:{principal.user_id}", limit=limit, window_s=window_s
+            )
+        except Exception:
+            logger.warning("rate limiter unavailable (route=%s)", name, exc_info=True)
+            if write:
+                raise RateLimitUnavailable() from None
+            return
+        if not decision.allowed:
+            raise RateLimited(decision.retry_after)
 
     return dependency
 

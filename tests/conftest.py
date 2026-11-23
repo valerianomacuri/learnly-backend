@@ -10,6 +10,7 @@ from typing import Any
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from redis.asyncio import Redis
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -308,3 +309,38 @@ def make_refund(session_maker: async_sessionmaker[AsyncSession]) -> MakeRefund:
             return refund.id
 
     return _make
+
+
+REDIS_TEST_URL = os.environ.get("TEST_REDIS_URL", "redis://localhost:6379/15")
+
+
+@pytest.fixture
+async def redis_client() -> AsyncIterator[Redis]:
+    client = Redis.from_url(
+        REDIS_TEST_URL, decode_responses=True, socket_connect_timeout=1
+    )
+    try:
+        await client.ping()
+    except Exception:
+        await client.aclose()
+        pytest.skip("Redis is not reachable")
+    await client.flushdb()
+    previous = getattr(app.state, "redis", None)
+    app.state.redis = client
+    yield client
+    app.state.redis = previous
+    await client.flushdb()
+    await client.aclose()
+
+
+@pytest.fixture
+async def broken_redis() -> AsyncIterator[Redis]:
+    """A configured Redis that nobody listens to (outage)."""
+    client = Redis.from_url(
+        "redis://127.0.0.1:1/0", decode_responses=True, socket_connect_timeout=0.2
+    )
+    previous = getattr(app.state, "redis", None)
+    app.state.redis = client
+    yield client
+    app.state.redis = previous
+    await client.aclose()

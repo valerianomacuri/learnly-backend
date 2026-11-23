@@ -80,7 +80,7 @@ answer `404`, exactly like missing ones.
 ## Development
 
 ```bash
-docker compose up -d db                         # start PostgreSQL (waits for healthcheck)
+docker compose up -d db redis                   # PostgreSQL (waits for healthcheck) + Redis (spec 12)
 uv run alembic upgrade head                     # run migrations
 uv run uvicorn app.main:app --reload --app-dir src
 ```
@@ -274,6 +274,28 @@ uv run pytest tests/rag -m "not live"   # fake embeddings/LLM; `-m live` hits Op
 citations of `/refunds/preview`) keeps working: those come from the policy
 `reason_code_map`, never from the LLM. The cross-encoder rerank is the optional extra
 `uv sync --extra rag-rerank`; without it retrieval falls back to the RRF order.
+
+## Security, limits and resilience (spec 12)
+
+```bash
+docker compose up -d db redis
+uv run pytest tests/security tests/agent_evals -q -m "not live"
+```
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `REDIS_URL` | unset | Rate limits, thread locks, token counters. **Unset = limits off** (local dev). Set but unreachable = reads fail open, writes (chat, `POST /refunds`) fail closed with 503 |
+| `CHAT_RATE_LIMIT` / `CHAT_RATE_WINDOW_S` | 20 / 60 | messages per customer (`/messages` and `/resume` share the counter) |
+| `REFUND_RATE_LIMIT` / `REFUND_RATE_WINDOW_S` | 5 / 3600 | `POST /refunds` per customer |
+| `THREAD_TOKEN_BUDGET` | 50000 | LLM tokens per chat thread; beyond it the stream answers `error{code: TOKEN_BUDGET_EXCEEDED}` |
+| `LLM_FALLBACK_MODEL` | unset | second OpenAI model used when the primary is down |
+| `BREAKER_FAILURE_THRESHOLD` / `BREAKER_RESET_S` | 5 / 30 | circuit breaker of the LLM (per process) |
+
+429 responses are `application/problem+json` with `Retry-After`. With the LLM down the
+chat answers `error{code: LLM_UNAVAILABLE}` and the manual refund form keeps working;
+with the vector store down `policy_qa` says so and offers a person. A dead-lettered
+payout logs one `event=payout_dead ...` ERROR line to alert on. Logs mask emails and
+tokens (`core/privacy.RedactingFilter`).
 
 ## Specs
 

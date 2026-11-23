@@ -13,6 +13,8 @@ from app.api.problems import TRACE_HEADER, problem_response
 from app.api.routes import api_router
 from app.core.config import get_settings
 from app.core.database import get_engine, get_sessionmaker
+from app.core.privacy import install_log_privacy
+from app.core.redis import open_redis
 from app.domain.errors import DomainProblem
 from app.repositories.policy import PolicyRepository
 from app.services.errors import (
@@ -28,16 +30,22 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Fail fast: the app needs a complete ACTIVE policy (`uv run policies-load`).
     async with AsyncSession(get_engine()) as session:
         await PolicyRepository(session).get_active_config()
+    app.state.redis = open_redis(get_settings().redis_url)
     async with AsyncExitStack() as stack:
         # `None` without OPENAI_API_KEY: the chat answers 503, the rest works.
-        app.state.agent_runtime = await start_runtime(get_sessionmaker(), stack)
+        app.state.agent_runtime = await start_runtime(
+            get_sessionmaker(), stack, app.state.redis
+        )
         yield
+    if app.state.redis is not None:
+        await app.state.redis.aclose()
     await get_engine().dispose()
 
 
 def create_app() -> FastAPI:
     settings = get_settings()  # fail fast on invalid environment
     logging.basicConfig(level=settings.log_level)
+    install_log_privacy()
 
     app = FastAPI(title=settings.app_name, lifespan=lifespan)
     app.add_middleware(
@@ -51,7 +59,7 @@ def create_app() -> FastAPI:
             "If-Match",
             TRACE_HEADER,
         ],
-        expose_headers=[TRACE_HEADER, "ETag"],
+        expose_headers=[TRACE_HEADER, "ETag", "Retry-After"],
     )
 
     @app.middleware("http")

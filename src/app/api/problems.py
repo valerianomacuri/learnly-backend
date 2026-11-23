@@ -19,10 +19,14 @@ def trace_id_of(request: Request) -> str:
 def problem_response(request: Request, exc: DomainProblem) -> JSONResponse:
     slug = re.sub(r"_", "-", exc.code).lower()
     trace_id = trace_id_of(request)
+    headers = {TRACE_HEADER: trace_id}
+    retry_after = getattr(exc, "retry_after", None)
+    if retry_after is not None:
+        headers["Retry-After"] = str(retry_after)
     return JSONResponse(
         status_code=exc.status,
         media_type=PROBLEM_MEDIA_TYPE,
-        headers={TRACE_HEADER: trace_id},
+        headers=headers,
         content={
             "type": f"/problems/{slug}",
             "code": exc.code,

@@ -15,6 +15,7 @@ from langgraph.config import get_stream_writer
 from pydantic import BaseModel
 
 from app.agent.deps import AgentDeps
+from app.agent.guardrails.injection import Level, assess
 from app.agent.prompts import (
     ASK_PURCHASE,
     ASK_REASON,
@@ -117,6 +118,9 @@ def make_collect_refund_info(
             category = extracted.reason_category or category
             text = extracted.reason_text or text
             question = extracted.question
+            if text and assess(text).level is Level.STRONG:
+                # The model echoed an injection as the "reason": treat it as missing.
+                text, question = None, REASON_INVALID
             if selected is None:
                 ask = question or ASK_PURCHASE
                 return {

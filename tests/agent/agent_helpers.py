@@ -6,12 +6,14 @@ from dataclasses import replace
 from datetime import datetime
 from typing import Any
 
+from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import InMemorySaver
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.agent.budget import TokenBudget
 from app.agent.deps import AgentDeps
 from app.agent.graph import build_graph
 from app.agent.llm import FakeChatModel
@@ -35,19 +37,23 @@ Events = list[tuple[str, dict[str, Any]]]
 
 def make_runtime(
     maker: Maker,
-    llm: FakeChatModel,
+    llm: BaseChatModel,
     *,
     threshold: float = 0.2,
     checkpointer: BaseCheckpointSaver[Any] | None = None,
     clock: Callable[[], datetime] | None = None,
+    retriever_factory: Callable[[AsyncSession], PolicyRetriever] | None = None,
+    budget: TokenBudget | None = None,
 ) -> AgentRuntime:
-    def retriever_factory(session: AsyncSession) -> PolicyRetriever:
+    def default_factory(session: AsyncSession) -> PolicyRetriever:
         return PolicyRetriever(session, FakeEmbeddings(), threshold=threshold)
 
-    deps = AgentDeps(maker, llm, retriever_factory, llm_timeout_s=5)
+    deps = AgentDeps(maker, llm, retriever_factory or default_factory, llm_timeout_s=5)
     if clock is not None:
         deps = replace(deps, clock=clock)
-    return AgentRuntime(build_graph(deps, checkpointer or InMemorySaver()), maker)
+    return AgentRuntime(
+        build_graph(deps, checkpointer or InMemorySaver()), maker, budget
+    )
 
 
 def scripted_llm(

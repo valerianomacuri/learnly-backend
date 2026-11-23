@@ -1,7 +1,7 @@
 """Chat with the agent (spec 09). Threads are owned; messages stream over SSE."""
 
 import uuid
-from collections.abc import Sequence
+from collections.abc import AsyncIterator, Sequence
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -9,10 +9,13 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from app.agent.runtime import AgentRuntime
 from app.agent.sse import to_sse
-from app.api.deps import SessionDep, requires
+from app.api.deps import SessionDep, rate_limit, requires
 from app.api.problems import PROBLEM_MEDIA_TYPE
+from app.core.config import get_settings
 from app.core.permissions import Perm
+from app.core.redis import ThreadLock
 from app.core.security import Principal
+from app.domain.errors import RunInProgress
 from app.schemas.chat import ChatMessageRead, MessageCreate, ResumeRequest, ThreadRead
 from app.services.chat_service import ChatService
 
@@ -33,6 +36,25 @@ def get_runtime(request: Request) -> AgentRuntime:
 
 
 RuntimeDep = Annotated[AgentRuntime, Depends(get_runtime)]
+
+_cfg = get_settings()
+# `messages` and `resume` share one counter (same name): 20 per minute per customer.
+ChatLimitDep = Annotated[
+    None,
+    Depends(
+        rate_limit("chat", _cfg.chat_rate_limit, _cfg.chat_rate_window_s),
+        scope="function",
+    ),
+]
+
+
+async def _locked(lock: ThreadLock, events: AsyncIterator[str]) -> AsyncIterator[str]:
+    """Stream `events` and release the thread lock when the run ends or is dropped."""
+    try:
+        async for chunk in events:
+            yield chunk
+    finally:
+        await lock.release()
 
 
 def _conflict(
@@ -94,6 +116,7 @@ async def send_message(
     body: MessageCreate,
     request: Request,
     principal: StreamUserDep,
+    _limit: ChatLimitDep,
     runtime: RuntimeDep,
 ) -> StreamingResponse:
     """SSE: `token`, `tool_call`, `tool_result`, `final` or `error`."""
@@ -104,8 +127,11 @@ async def send_message(
     if pending is not None:
         # The card does not disappear on its own: answer it through /resume.
         return _conflict(request, "INTERRUPT_PENDING", pending)  # type: ignore[return-value]
+    lock = ThreadLock(getattr(request.app.state, "redis", None), thread_id)
+    if not await lock.acquire():
+        raise RunInProgress()
     return StreamingResponse(
-        to_sse(runtime.stream(config, body.content)),
+        _locked(lock, to_sse(runtime.stream(config, body.content))),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
     )
@@ -141,6 +167,7 @@ async def resume(
     body: ResumeRequest,
     request: Request,
     principal: StreamUserDep,
+    _limit: ChatLimitDep,
     runtime: RuntimeDep,
 ) -> StreamingResponse:
     """SSE continuation of the graph. 409 if nothing waits or the id does not match."""
@@ -150,8 +177,11 @@ async def resume(
     pending = await runtime.pending_interrupt(config)
     if pending is None or pending.get("interrupt_id") != body.interrupt_id:
         return _conflict(request, "INTERRUPT_NOT_PENDING", pending)  # type: ignore[return-value]
+    lock = ThreadLock(getattr(request.app.state, "redis", None), thread_id)
+    if not await lock.acquire():
+        raise RunInProgress()
     return StreamingResponse(
-        to_sse(runtime.resume(config, body.model_dump())),
+        _locked(lock, to_sse(runtime.resume(config, body.model_dump()))),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
     )

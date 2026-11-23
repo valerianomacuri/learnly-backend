@@ -4,7 +4,7 @@ install:
 	uv sync
 
 db:
-	docker compose up -d db
+	docker compose up -d db redis
 
 migrate:
 	uv run alembic upgrade head

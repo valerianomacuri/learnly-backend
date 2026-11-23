@@ -20,6 +20,7 @@ dependencies = [
     "pgvector>=0.5.1",
     "psycopg[binary]>=3.3.9",
     "pwdlib[argon2]>=0.3.1",
+    "redis>=5.0",
     "pydantic-settings>=2.16.3",
     "pyjwt>=2.15.1",
     "pyyaml>=6.0.3",
@@ -67,6 +68,11 @@ select = [
     "N",  # Naming conventions
 ]
 
+[tool.ruff.lint.per-file-ignores]
+# Regex tables and test data read better on one line.
+"src/app/agent/guardrails/*.py" = ["E501"]
+"tests/**/*.py" = ["E501"]
+
 [tool.ruff.lint.flake8-bugbear]
 extend-immutable-calls = ["fastapi.Depends"]
 
@@ -79,7 +85,10 @@ testpaths = ["tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 addopts = "-m 'not live'"
-markers = ["live: calls the real OpenAI API (excluded by default)"]
+markers = [
+    "live: calls the real OpenAI API (excluded by default)",
+    "redis: needs a reachable Redis (skipped otherwise)",
+]
 
 [tool.mypy]
 python_version = "3.13"
