@@ -19,6 +19,9 @@ LABELS = {
     "precision_at_5": "Precisión@5 (contexto)",
     "faithfulness": "Faithfulness",
     "citation_precision": "Precisión de citas",
+    "context_precision": "Context precision",
+    "context_recall": "Context recall",
+    "answer_relevancy": "Answer relevancy",
     "correct_abstention": "Abstención correcta",
     "correct_figures": "Cifras correctas",
     "latency_p50_s": "Latencia p50 (s)",
@@ -27,7 +30,15 @@ LABELS = {
     "poisoned_leaks": "Fugas doc. envenenado",
 }
 # Metrics that are reported but have no threshold.
-INFORMATIONAL = ("mrr", "precision_at_5", "latency_p50_s", "tokens_est_total")
+INFORMATIONAL = (
+    "mrr",
+    "precision_at_5",
+    "context_precision",
+    "context_recall",
+    "answer_relevancy",
+    "latency_p50_s",
+    "tokens_est_total",
+)
 
 
 @dataclass(frozen=True, slots=True)

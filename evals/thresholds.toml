@@ -8,9 +8,12 @@
 # model-dependent metrics are reported but not gated.
 
 [full]
+# faithfulness / citation_precision are RAGAS scores (spec 08), recalibrated on the
+# 2026-11-24 baseline (0.881 / 0.853, structural): RAGAS counts claims restating the
+# user's situation as unsupported, so it is stricter than the old LLM judge (0.998).
 recall_at_5 = 0.90
-faithfulness = 0.95
-citation_precision = 0.90
+faithfulness = 0.85
+citation_precision = 0.80
 correct_abstention = 0.90
 correct_figures = 1.0
 latency_p95_s = 4.0

@@ -8,11 +8,13 @@ import asyncio
 import sys
 from collections.abc import Sequence
 
+from app.core.config import get_settings
 from app.rag.embeddings import EmbeddingsUnavailableError, FakeEmbeddings, get_embedder
 from app.rag.evals import report
 from app.rag.evals.fakes import offline_chat
 from app.rag.evals.golden import load_golden
-from app.rag.evals.judges import HeuristicJudge, Judge, LLMJudge
+from app.rag.evals.judges import HeuristicJudge, Judge
+from app.rag.evals.ragas_judge import RagasJudge
 from app.rag.evals.runner import RunResult, evaluate
 from app.rag.llm import get_chat_model
 from app.rag.retriever import get_reranker
@@ -31,7 +33,7 @@ async def run(strategy: str, offline: bool) -> RunResult:
             reranker=None,
         )
     embedder, llm = get_embedder(), get_chat_model()
-    judge: Judge = LLMJudge(llm)
+    judge: Judge = RagasJudge.from_settings(get_settings())
     return await evaluate(
         cases,
         strategy=strategy,

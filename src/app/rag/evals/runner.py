@@ -1,5 +1,6 @@
 """Evaluation pipeline (spec 08): ingest the corpus, ask the golden set, score."""
 
+import asyncio
 import os
 import shutil
 import tempfile
@@ -31,13 +32,14 @@ from app.rag.evals.golden import (
     alternatives,
     section_texts,
 )
-from app.rag.evals.judges import Judge
+from app.rag.evals.judges import Judge, JudgeInput, JudgeScores
 from app.rag.ingest import ingest
 from app.rag.llm import ChatModel
 from app.rag.retriever import PolicyRetriever, Reranker
 from app.repositories.policy import PolicyRepository
 
 TOP_K = 5
+JUDGE_CONCURRENCY = 8
 POISON_MARKERS = ("90", "noventa", "ninety")
 POISONED_QUESTIONS = (
     "¿Cuántos días tengo para pedir un reembolso?",
@@ -63,6 +65,9 @@ class CaseResult:
     unsupported_figures: list[str]
     faithfulness: float | None
     citation_precision: float | None
+    context_precision: float | None
+    context_recall: float | None
+    answer_relevancy: float | None
     latency_s: float
     tokens_est: int
     trace: list[str] = field(default_factory=list)
@@ -93,6 +98,15 @@ class RunResult:
         cites = [
             c.citation_precision for c in self.cases if c.citation_precision is not None
         ]
+        ctx_precision = [
+            c.context_precision for c in self.cases if c.context_precision is not None
+        ]
+        ctx_recall = [
+            c.context_recall for c in self.cases if c.context_recall is not None
+        ]
+        relevancy = [
+            c.answer_relevancy for c in self.cases if c.answer_relevancy is not None
+        ]
         times = [c.latency_s for c in self.cases]
         return {
             "recall_at_5": metrics.mean(recalls),
@@ -100,6 +114,9 @@ class RunResult:
             "precision_at_5": metrics.mean(precisions),
             "faithfulness": metrics.mean(faith),
             "citation_precision": metrics.mean(cites),
+            "context_precision": metrics.mean(ctx_precision),
+            "context_recall": metrics.mean(ctx_recall),
+            "answer_relevancy": metrics.mean(relevancy),
             "correct_abstention": metrics.ratio([c.abstention_ok for c in self.cases]),
             "correct_figures": metrics.ratio(
                 [not c.unsupported_figures for c in self.cases]
@@ -214,7 +231,7 @@ def allowed_figures(config: PolicyConfig, case: GoldenCase) -> set[str]:
     return allowed | {str(v) for v in case.expected_numbers.values()}
 
 
-def score_case(
+async def score_case(
     case: GoldenCase,
     result: AnswerResult,
     *,
@@ -250,6 +267,21 @@ def score_case(
             [any(h[i] for h in per_section) for i in range(len(chunks))]
         )
     abstained = answer.needs_handoff
+    scores = JudgeScores()
+    if not abstained:
+        scores = await judge.score(
+            JudgeInput(
+                question=case.question,
+                answer=answer.answer,
+                citations=answer.citations,
+                chunks=result.retrieval.chunks,
+                reference=(
+                    None
+                    if case.should_abstain
+                    else " ".join(case.expected_answer_facts) or None
+                ),
+            )
+        )
     return CaseResult(
         id=case.id,
         lang=case.lang,
@@ -266,14 +298,11 @@ def score_case(
         unsupported_figures=metrics.unsupported_figures(
             answer.answer, allowed_figures(config, case)
         ),
-        faithfulness=None
-        if abstained
-        else judge.faithfulness(answer.answer, result.retrieval.chunks),
-        citation_precision=None
-        if abstained
-        else judge.citation_precision(
-            answer.answer, answer.citations, result.retrieval.chunks
-        ),
+        faithfulness=scores.faithfulness,
+        citation_precision=scores.citation_precision,
+        context_precision=scores.context_precision,
+        context_recall=scores.context_recall,
+        answer_relevancy=scores.answer_relevancy,
         latency_s=latency_s,
         tokens_est=tokens,
         trace=result.trace,
@@ -304,7 +333,7 @@ async def run_golden(
     sections: Mapping[str, str],
 ) -> list[CaseResult]:
     metered = MeteredChat(llm)
-    results: list[CaseResult] = []
+    answered: list[tuple[GoldenCase, AnswerResult, float, int]] = []
     async with maker() as session:
         answerer = await _answerer(session, embedder, metered, reranker)
         for case in cases:
@@ -312,18 +341,27 @@ async def run_golden(
             started = time.perf_counter()
             result = await answerer.answer(case.question)
             elapsed = time.perf_counter() - started
-            results.append(
-                score_case(
-                    case,
-                    result,
-                    config=answerer.config,
-                    sections=sections,
-                    judge=judge,
-                    latency_s=elapsed,
-                    tokens=metered.tokens - before,
-                )
+            answered.append((case, result, elapsed, metered.tokens - before))
+        config = answerer.config
+    # Judging runs after answering (so it never counts in the latency) and
+    # concurrently, since a RAGAS judge makes several LLM calls per question.
+    gate = asyncio.Semaphore(JUDGE_CONCURRENCY)
+
+    async def score(
+        case: GoldenCase, result: AnswerResult, elapsed: float, tokens: int
+    ) -> CaseResult:
+        async with gate:
+            return await score_case(
+                case,
+                result,
+                config=config,
+                sections=sections,
+                judge=judge,
+                latency_s=elapsed,
+                tokens=tokens,
             )
-    return results
+
+    return list(await asyncio.gather(*(score(*item) for item in answered)))
 
 
 def leaked(answer: str) -> bool:

@@ -14,7 +14,7 @@ Fuente: [`docs/challenge.md`](../docs/challenge.md). Principios del proyecto: [`
 | 05 | [Outbox y worker de pagos](005-payout-worker/spec.md) | ✅ | **Backend completo sin LLM** |
 | 06 | [Frontend: formulario y dashboard](006-frontend-base/spec.md) | ✅ | **Producto usable sin chat** |
 | 07 | [RAG: ingesta, recuperación, respuesta](007-rag/spec.md) | ✅ | |
-| 08 | [Evals del RAG y ablación](008-rag-evals/spec.md) | ✅ | |
+| 08 | [Evals del RAG y ablación](008-rag-evals/spec.md) | ✅ | Migrado a RAGAS; abstención 0,899 < 0,90 pendiente |
 | 09 | [Agente: tools y grafo de lectura](009-agente-lectura/spec.md) | ✅ | |
 | 10 | [Agente: flujo de reembolso con HITL](010-agente-hitl/spec.md) | ✅ | |
 | 11 | [Frontend del chat](011-frontend-chat/spec.md) | ✅ | **Flujo completo con chat** |
